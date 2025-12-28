@@ -44,10 +44,10 @@ type VAPIDPusher struct {
 	// while the validation of the key will expire sooner than configured expiration this amount of duration,
 	// thus make the actual expiration time equal to configured expiration.
 	// It is recommended to set this field to at least 30 minutes.
-	vapidTTLBuffer time.Duration
-	localSecretTTL time.Duration // Optional, enable local public key and secret reuse.
-	base64Encoding Base64Encoding
-	randReader     io.Reader
+	vapidTTLBuffer   time.Duration
+	localSecretTTLFn func() time.Duration // Optional, enable local public key and secret reuse.
+	base64Encoding   Base64Encoding
+	randReader       io.Reader
 
 	mu    sync.RWMutex
 	cache map[string]*reusableKey // Cache of VAPID JWT token by audience.
@@ -131,7 +131,7 @@ func (p *VAPIDPusher) IsVapidTokenCachingEnabled() bool {
 }
 
 func (p *VAPIDPusher) IsLocalSecretCachingEnabled() bool {
-	return p.localSecretTTL > 0
+	return p.localSecretTTLFn != nil
 }
 
 func (p *VAPIDPusher) SendNotification(ctx context.Context, message []byte, sub *Subscription) (*http.Response, error) {
@@ -171,7 +171,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	// GENERATE SHARED AND PUBLIC KEY.
 	var localPublicKeyBytes []byte
 	var sharedECDHSecret []byte
-	if p.localSecretTTL > 0 && sub.LocalKey != nil && sub.LocalKey.At > time.Now().Add(-p.localSecretTTL).UnixMilli() {
+	if p.localSecretTTLFn != nil && sub.LocalKey != nil && sub.LocalKey.At > time.Now().Add(-p.localSecretTTLFn()).UnixMilli() {
 		// Use publicKey and secret from LocalKey.
 		localPublicKeyBytes, err = p.base64Encoding.DecodeString(sub.LocalKey.Public)
 		if err != nil {
@@ -193,7 +193,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 			return nil, errors.Join(ErrEncryption, err)
 		}
 		// Update LocalKey if enabled.
-		if p.localSecretTTL > 0 {
+		if p.localSecretTTLFn != nil {
 			sub.LocalKey = &LocalKey{
 				Public: p.base64Encoding.EncodeToString(localPublicKeyBytes),
 				Secret: p.base64Encoding.EncodeToString(sharedECDHSecret),

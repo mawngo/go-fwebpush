@@ -45,6 +45,18 @@ func WithRandReader(rand io.Reader) VAPIDPusherOption {
 // You can save the generated LocalKey with the Subscription to reuse later.
 func WithLocalSecretTTL(exp time.Duration) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {
-		pusher.localSecretTTL = exp
+		pusher.localSecretTTLFn = func() time.Duration {
+			return exp
+		}
+	}
+}
+
+// WithLocalSecretTTLFn configure reusing of the local secret and public key.
+// Set to nil to disable.
+//
+// See [WithLocalSecretTTL].
+func WithLocalSecretTTLFn(fn func() time.Duration) VAPIDPusherOption {
+	return func(pusher *VAPIDPusher) {
+		pusher.localSecretTTLFn = fn
 	}
 }

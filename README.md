@@ -35,6 +35,47 @@ The library applies various optimizations to improve performance, including:
   library.
 - `WithRandReader` Allow user to opt in faster rand.Reader.
 
+## Usage
+
+For a full example, refer to the code in the [example](example/) directory.
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/mawngo/go-fwebpush"
+)
+
+func main() {
+	// Decode subscription.
+	s := fwebpush.Subscription{}
+	err := json.Unmarshal([]byte("<YOUR_SUBSCRIPTION>"), &s)
+	if err != nil {
+		panic(err)
+	}
+
+	pusher, err := fwebpush.NewVAPIDPusher(
+		"example@example.com",
+		"<YOUR_VAPID_PUBLIC_KEY>",
+		"<YOUR_VAPID_PRIVATE_KEY>",
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// Send Notification.
+	resp, err := pusher.SendNotification(context.Background(), []byte("Test"), &s, fwebpush.Options{TTL: 30})
+	if err != nil {
+		// TODO: Handle error
+	}
+	defer resp.Body.Close()
+}
+
+```
+
 ### Generating VAPID Keys
 
 Use the helper method `GenerateVAPIDKeys` to generate the VAPID key pair.
@@ -45,3 +86,7 @@ if err != nil {
 // TODO: Handle error
 }
 ```
+
+### Dependencies
+
+This library only depends on `golang.org/x/crypto`.

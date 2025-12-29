@@ -126,14 +126,19 @@ type LocalKey struct {
 	At int64 `json:"a"`
 }
 
+// IsVapidTokenCachingEnabled returns whether the VAPID token caching feature is enabled.
 func (p *VAPIDPusher) IsVapidTokenCachingEnabled() bool {
 	return p.vapidTokenTTL > 0
 }
 
+// IsLocalSecretCachingEnabled returns whether the local secret caching feature is enabled.
 func (p *VAPIDPusher) IsLocalSecretCachingEnabled() bool {
 	return p.localSecretTTLFn != nil
 }
 
+// SendNotification ends a push notification to a subscription's endpoint.
+// Message Encryption for Web Push, and VAPID protocols.
+// FOR MORE INFORMATION SEE RFC8291: https://datatracker.ietf.org/doc/rfc8291.
 func (p *VAPIDPusher) SendNotification(ctx context.Context, message []byte, sub *Subscription) (*http.Response, error) {
 	return p.SendNotificationOptions(ctx, message, sub, Options{})
 }
@@ -152,6 +157,9 @@ func (p *VAPIDPusher) SendNotificationOptions(ctx context.Context, message []byt
 // PrepareNotificationRequest prepare a push notification request to a subscription's endpoint.
 // Message Encryption for Web Push, and VAPID protocols.
 // FOR MORE INFORMATION SEE RFC8291: https://datatracker.ietf.org/doc/rfc8291.
+// The request can then be sent using any http client or [VAPIDPusher.ExecuteRequest].
+//
+// It is recommended to use [VAPIDPusher.SendNotification] directly instead.
 func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []byte, sub *Subscription, options Options) (*http.Request, error) {
 	authSecret, err := p.decodeBase64(sub.Keys.Auth)
 	if err != nil {
@@ -294,6 +302,15 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 	req.Header["Authorization"] = []string{keys.vapid}
 	return req, nil
+}
+
+// ExecuteRequest send an [http.Request] using the underlying client,
+// usually the request prepared by [VAPIDPusher.PrepareNotificationRequest].
+// Useful when you want to measure the request preparation and the request execution time separately.
+//
+// It is recommended to use [VAPIDPusher.SendNotification] directly instead.
+func (p *VAPIDPusher) ExecuteRequest(req *http.Request) (*http.Response, error) {
+	return p.client.Do(req)
 }
 
 // GenVAPIDAuthHeader generate the web push vapid auth header.

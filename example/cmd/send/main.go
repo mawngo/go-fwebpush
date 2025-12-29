@@ -20,7 +20,7 @@ func main() {
 	if *vapid == "" {
 		*vapid = mustReadFile(".vapid.txt")
 		if *vapid == "" {
-			println("vapid key pair is required")
+			println("VAPID key pair is required")
 			return
 		}
 	}
@@ -28,7 +28,7 @@ func main() {
 	if *sub == "" {
 		*sub = mustReadFile(".subscription.json")
 		if *sub == "" {
-			println("subscription is required")
+			println("Subscription is required")
 			return
 		}
 	}
@@ -45,6 +45,7 @@ func main() {
 		*subject,
 		keypair[1],
 		keypair[0],
+		fwebpush.WithLocalSecretTTL(12*time.Hour),
 	)
 
 	if err != nil {
@@ -52,11 +53,31 @@ func main() {
 	}
 
 	// Send Notification.
+	start := time.Now()
 	resp, err := pusher.SendNotificationOptions(context.Background(), []byte(*msg), &s, fwebpush.Options{TTL: 30})
 	if err != nil {
 		panic(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		println("Notification sent took", time.Since(start).String())
+		file, err := os.Create(".subscription.json")
+		if err != nil {
+			println("Error creating file:", err)
+			return
+		}
+		defer file.Close()
+		encoder := json.NewEncoder(file)
+		encoder.SetIndent("", "  ")
+		err = encoder.Encode(s)
+		if err != nil {
+			println("Error encoding json to file:", err)
+			return
+		}
+		return
+	}
+	println("error status", resp.StatusCode)
 }
 
 func mustReadFile(filename string) string {

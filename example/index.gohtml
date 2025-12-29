@@ -23,12 +23,10 @@
                 });
             })
             .then(function (subscription) {
-                console.log(
-                    JSON.stringify(subscription)
-                );
+                console.log(subscription);
                 fetch('/sub', {
                     method: 'POST',
-                    body: JSON.stringify(subscription)
+                    body: JSON.stringify(subscription, null, 4)
                 })
             })
             .catch(err => console.error(err));

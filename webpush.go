@@ -291,7 +291,6 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		return nil, err
 	}
 	req.Header["Content-Encoding"] = []string{"aes128gcm"}
-	req.Header["Content-Length"] = []string{strconv.Itoa(len(ciphertext))}
 	req.Header["Content-Type"] = []string{"application/octet-stream"}
 	req.Header["TTL"] = []string{strconv.Itoa(options.TTL)}
 	if options.Urgency != UrgencyUnset && isValidUrgency(options.Urgency) {

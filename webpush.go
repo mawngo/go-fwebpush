@@ -179,7 +179,12 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	// GENERATE SHARED AND PUBLIC KEY.
 	var localPublicKeyBytes []byte
 	var sharedECDHSecret []byte
-	if p.localSecretTTLFn != nil && sub.LocalKey != nil && sub.LocalKey.At > time.Now().Add(-p.localSecretTTLFn()).UnixMilli() {
+	var now time.Time
+	isLocalSecretCacheEnabled := p.localSecretTTLFn != nil && sub.LocalKey != nil
+	if isLocalSecretCacheEnabled {
+		now = time.Now()
+	}
+	if isLocalSecretCacheEnabled && sub.LocalKey.At > now.Add(-p.localSecretTTLFn()).UnixMilli() {
 		// Use publicKey and secret from LocalKey.
 		localPublicKeyBytes, err = p.base64Encoding.DecodeString(sub.LocalKey.Public)
 		if err != nil {
@@ -205,7 +210,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 			sub.LocalKey = &LocalKey{
 				Public: p.base64Encoding.EncodeToString(localPublicKeyBytes),
 				Secret: p.base64Encoding.EncodeToString(sharedECDHSecret),
-				At:     time.Now().UnixMilli(),
+				At:     now.UnixMilli(),
 			}
 		}
 	}

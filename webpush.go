@@ -217,7 +217,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	cipherTextLen := dataLen + gcmTagSize
 	recordLen := saltLen + rsLen + 1 + len(localPublicKeyBytes) + cipherTextLen
 	// buf is just for bulk allocation and re-slicing, does not use it directly.
-	buf := make([]byte, prkLen+hkdfLen+cipherTextLen+saltLen+recordLen)
+	buf := make([]byte, prkLen+hkdfLen+cipherTextLen+saltLen+rsLen+recordLen)
 	i := 0
 	prkInfo := buf[i:prkLen:prkLen]
 	i += prkLen
@@ -228,6 +228,8 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	i += cipherTextLen
 	salt := buf[i : i+saltLen : i+saltLen]
 	i += saltLen
+	rs := buf[i : i+rsLen : i+rsLen]
+	i += rsLen
 	record := buf[i : i+recordLen : i+recordLen]
 
 	// Start generating payload
@@ -274,7 +276,6 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	data[len(message)] = 2
 	// Compose the ciphertext.
 	ciphertext := gcm.Seal(data[:0], nonce, data, nil)
-	rs := make([]byte, rsLen)
 	binary.BigEndian.PutUint32(rs, uint32(len(message)*8))
 
 	// Encryption Content-Coding Header.

@@ -246,20 +246,22 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 
 	// buf is just for bulk allocation and re-slicing, does not use it directly.
-	buf := make([]byte, prkLen+hkdfLen+cipherTextLen+saltLen+rsLen+recordLen)
+	buf := make([]byte, prkLen+hkdfLen+recordLen)
 	i := 0
 	prkInfo := buf[i:prkLen:prkLen]
 	i += prkLen
 	bufHKDF := buf[i : i+hkdfLen : i+hkdfLen]
 	i += hkdfLen
-	// Use data slice for both data and cipher text.
-	data := buf[i : i+dataLen : i+cipherTextLen]
-	i += cipherTextLen
-	salt := buf[i : i+saltLen : i+saltLen]
-	i += saltLen
-	rs := buf[i : i+rsLen : i+rsLen]
-	i += rsLen
+
+	// The salt, rs and cipher text already inside the record, so we can use it directly.
 	record := buf[i : i+recordLen : i+recordLen]
+	i = 0
+	salt := record[i : i+saltLen : i+saltLen]
+	i += saltLen
+	rs := record[i : i+rsLen : i+rsLen]
+	i += rsLen + 1 + len(localPublicKeyBytes)
+	// Use data slice for both data and cipher text.
+	data := record[i : i+dataLen : i+cipherTextLen]
 
 	// Start generating payload
 	hash := sha256.New

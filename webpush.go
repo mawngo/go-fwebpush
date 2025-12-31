@@ -18,6 +18,9 @@ import (
 	"time"
 )
 
+const MaxRecordSize = 4096
+
+var ErrMaxSizeExceeded = errors.New("message too large")
 var ErrEncryption = errors.New("encryption error")
 
 var (
@@ -48,6 +51,8 @@ type VAPIDPusher struct {
 	localSecretTTLFn func() time.Duration // Optional, enable local public key and secret reuse.
 	base64Encoding   Base64Encoding
 	randReader       io.Reader
+	recordSize       int
+	maxRecordSize    int
 
 	mu    sync.RWMutex
 	cache map[string]*reusableKey // Cache of VAPID JWT token by audience.
@@ -66,6 +71,7 @@ func NewVAPIDPusher(
 		base64Encoding: base64.RawURLEncoding,
 		vapidTTLBuffer: 1 * time.Hour,
 		randReader:     rand.Reader,
+		maxRecordSize:  MaxRecordSize,
 	}
 	for _, opt := range options {
 		opt(c)
@@ -99,9 +105,10 @@ type Base64Encoding interface {
 
 // Options are config and extra params needed to send a notification.
 type Options struct {
-	Topic   string  // Set the Topic header to collapse pending messages.
-	TTL     int     // Set the TTL on the endpoint POST request.
-	Urgency Urgency // Set the Urgency header.
+	Topic      string  // Set the Topic header to collapse pending messages.
+	TTL        int     // Set the TTL on the endpoint POST request.
+	Urgency    Urgency // Set the Urgency header.
+	RecordSize int     // Set the target record size for padding.
 }
 
 // Keys are the base64 encoded values from PushSubscription.getKey().
@@ -218,9 +225,26 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	// GENERATE PAYLOAD.
 	// Pre-alloc everything.
 	prkLen := len(webpushInfo) + len(dh) + len(localPublicKeyBytes)
+	// Add 1 byte for padding delimiter.
 	dataLen := len(message) + 1
 	cipherTextLen := dataLen + gcmTagSize
 	recordLen := saltLen + rsLen + 1 + len(localPublicKeyBytes) + cipherTextLen
+	if recordLen > p.maxRecordSize {
+		return nil, ErrMaxSizeExceeded
+	}
+
+	// Calculate size for padding.
+	recordSize := p.recordSize
+	if options.RecordSize > 0 {
+		recordSize = options.RecordSize
+	}
+	if recordLen < recordSize {
+		padLen := recordSize - recordLen
+		recordLen = recordSize
+		cipherTextLen += padLen
+		dataLen += padLen
+	}
+
 	// buf is just for bulk allocation and re-slicing, does not use it directly.
 	buf := make([]byte, prkLen+hkdfLen+cipherTextLen+saltLen+rsLen+recordLen)
 	i := 0
@@ -281,7 +305,10 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	data[len(message)] = 2
 	// Compose the ciphertext.
 	ciphertext := gcm.Seal(data[:0], nonce, data, nil)
-	binary.BigEndian.PutUint32(rs, uint32(len(message)*8))
+	// From the spec, rs must greater than: plaintext data + padding delimiter + padding + gcmTag,
+	// which equal to computed cipherTextLen.
+	// Most of the lib I found just use 4096 here, as it is the payload limit.
+	binary.BigEndian.PutUint32(rs, MaxRecordSize)
 
 	// Encryption Content-Coding Header.
 	copy(record, salt)

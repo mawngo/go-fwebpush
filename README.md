@@ -20,7 +20,7 @@ The library applies various optimizations to improve performance, including:
 - Avoid header canonicalization (which, in turn, further reducing allocation)
 - Optimized encoding
 - Caching keys and token (see bellow)
-- No paddings
+- No padding by default
 
 ### Optional Optimization
 

@@ -60,3 +60,23 @@ func WithLocalSecretTTLFn(fn func() time.Duration) VAPIDPusherOption {
 		pusher.localSecretTTLFn = fn
 	}
 }
+
+// WithRecordSize configure padding of the message payload.
+// Payload that has length exceed the configured size will not be padded.
+// The maximum accepted value is [MaxRecordSize].
+// The default value is 0 (disabled)
+func WithRecordSize(size int) VAPIDPusherOption {
+	return func(pusher *VAPIDPusher) {
+		pusher.recordSize = min(max(size, 0), MaxRecordSize)
+	}
+}
+
+// WithMaxRecordSize configure the maximum message payload size.
+// If the payload exceeds this size, the push will fail with [ErrMaxSizeExceeded]
+// The maximum accepted value is [MaxRecordSize] (default).
+// The minimum accepted value is 128.
+func WithMaxRecordSize(size int) VAPIDPusherOption {
+	return func(pusher *VAPIDPusher) {
+		pusher.maxRecordSize = min(max(size, 128), MaxRecordSize)
+	}
+}

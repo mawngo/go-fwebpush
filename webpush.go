@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 const MaxRecordSize = 4096
@@ -49,7 +50,6 @@ type VAPIDPusher struct {
 	// It is recommended to set this field to at least 30 minutes.
 	vapidTTLBuffer   time.Duration
 	localSecretTTLFn func() time.Duration // Optional, enable local public key and secret reuse.
-	base64Encoding   Base64Encoding
 	randReader       io.Reader
 	recordSize       int
 	maxRecordSize    int
@@ -68,7 +68,6 @@ func NewVAPIDPusher(
 		mailtoSub:      "mailto:" + subject,
 		vapidTokenTTL:  12 * time.Hour,
 		cache:          make(map[string]*reusableKey),
-		base64Encoding: base64.RawURLEncoding,
 		vapidTTLBuffer: 1 * time.Hour,
 		randReader:     rand.Reader,
 		maxRecordSize:  MaxRecordSize,
@@ -79,16 +78,16 @@ func NewVAPIDPusher(
 
 	// Decode the VAPID private key.
 	var err error
-	c.vapidPrivateKey, err = c.decodeBase64(vapidPrivateKey)
+	c.vapidPrivateKey, err = decodeBase64(vapidPrivateKey)
 	if err != nil {
 		return nil, err
 	}
 	// Decode the VAPID public key.
-	vapidPublicKeyBytes, err := c.decodeBase64(vapidPublicKey)
+	vapidPublicKeyBytes, err := decodeBase64(vapidPublicKey)
 	if err != nil {
 		return nil, err
 	}
-	c.vapidPublicKeyHeaderPart = ", k=" + c.base64Encoding.EncodeToString(vapidPublicKeyBytes)
+	c.vapidPublicKeyHeaderPart = ", k=" + encodeBase64String(vapidPublicKeyBytes)
 
 	if c.client == nil {
 		c.client = &http.Client{
@@ -96,11 +95,6 @@ func NewVAPIDPusher(
 		}
 	}
 	return c, nil
-}
-
-type Base64Encoding interface {
-	DecodeString(string) ([]byte, error)
-	EncodeToString([]byte) string
 }
 
 // Options are config and extra params needed to send a notification.
@@ -168,11 +162,11 @@ func (p *VAPIDPusher) SendNotificationOptions(ctx context.Context, message []byt
 //
 // It is recommended to use [VAPIDPusher.SendNotification] directly instead.
 func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []byte, sub *Subscription, options Options) (*http.Request, error) {
-	authSecret, err := p.decodeBase64(sub.Keys.Auth)
+	authSecret, err := decodeBase64(sub.Keys.Auth)
 	if err != nil {
 		return nil, errors.Join(ErrEncryption, err)
 	}
-	dh, err := p.decodeBase64(sub.Keys.P256dh)
+	dh, err := decodeBase64(sub.Keys.P256dh)
 	if err != nil {
 		return nil, errors.Join(ErrEncryption, err)
 	}
@@ -193,11 +187,11 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 	if isLocalSecretCacheEnabled && sub.LocalKey.At > now.Add(-p.localSecretTTLFn()).UnixMilli() {
 		// Use publicKey and secret from LocalKey.
-		localPublicKeyBytes, err = p.base64Encoding.DecodeString(sub.LocalKey.Public)
+		localPublicKeyBytes, err = decodeBase64String(sub.LocalKey.Public)
 		if err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
-		sharedECDHSecret, err = p.base64Encoding.DecodeString(sub.LocalKey.Secret)
+		sharedECDHSecret, err = decodeBase64String(sub.LocalKey.Secret)
 		if err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
@@ -215,8 +209,8 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		// Update LocalKey if enabled.
 		if p.localSecretTTLFn != nil {
 			sub.LocalKey = &LocalKey{
-				Public: p.base64Encoding.EncodeToString(localPublicKeyBytes),
-				Secret: p.base64Encoding.EncodeToString(sharedECDHSecret),
+				Public: encodeBase64String(localPublicKeyBytes),
+				Secret: encodeBase64String(sharedECDHSecret),
 				At:     now.UnixMilli(),
 			}
 		}
@@ -366,16 +360,7 @@ func (p *VAPIDPusher) genSalt(salt []byte) error {
 	return nil
 }
 
-func (p *VAPIDPusher) decodeBase64(key string) ([]byte, error) {
-	b, err := p.base64Encoding.DecodeString(key)
-	if err == nil {
-		return b, nil
-	}
-	return decodeBas64Safe(key)
-}
-
-// decodeBas64Safe decodes a base64 subscription key.
-func decodeBas64Safe(key string) ([]byte, error) {
+func decodeBase64(key string) ([]byte, error) {
 	b, err := base64.RawURLEncoding.DecodeString(key)
 	if err == nil {
 		return b, nil
@@ -391,11 +376,35 @@ func decodeBas64Safe(key string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(key)
 }
 
-// Returns a key of length "length" given a hkdf function.
+func decodeBase64String(key string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(key)
+}
+
+func encodeBase64String(src []byte) string {
+	buf := make([]byte, base64.RawURLEncoding.EncodedLen(len(src)))
+	base64.RawURLEncoding.Encode(buf, src)
+	return unsafeString(buf)
+}
+
+// getHKDFKey Returns a key of length "length" given a hkdf function.
 func getHKDFKey(hkdf io.Reader, dst []byte) ([]byte, error) {
 	n, err := io.ReadFull(hkdf, dst)
 	if n != len(dst) || err != nil {
 		return dst, err
 	}
 	return dst, nil
+}
+
+// unsafeString returns a string pointer without allocation.
+func unsafeString(b []byte) string {
+	// #nosec G103
+	return *(*string)(unsafe.Pointer(&b))
+}
+
+// unsafeBytes returns a byte pointer without allocation.
+// This is an unsafe way, the result string and []byte buffer share the same bytes.
+// Please make sure not to modify the bytes in the []byte buffer if the string still survives!
+func unsafeBytes(s string) []byte {
+	// #nosec G103
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

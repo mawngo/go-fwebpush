@@ -291,13 +291,13 @@ func benchEachSub(b *testing.B, bench func(b *testing.B, pusher *VAPIDPusher, su
 //nolint:staticcheck
 func goWebpushImpl(ctx context.Context, sub, pub, priv string, s *Subscription, options Options) (*http.Request, error) {
 	// Authentication secret (auth_secret).
-	authSecret, err := decodeBas64Safe(s.Keys.Auth)
+	authSecret, err := base64.RawURLEncoding.DecodeString(s.Keys.Auth)
 	if err != nil {
 		return nil, err
 	}
 
 	// dh (Diffie Hellman).
-	dh, err := decodeBas64Safe(s.Keys.P256dh)
+	dh, err := base64.RawURLEncoding.DecodeString(s.Keys.P256dh)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func getVAPIDAuthorizationHeader(
 	})
 
 	// Decode the VAPID private key
-	decodedVapidPrivateKey, err := decodeBas64Safe(vapidPrivateKey)
+	decodedVapidPrivateKey, err := base64.RawURLEncoding.DecodeString(vapidPrivateKey)
 	if err != nil {
 		return "", err
 	}
@@ -463,7 +463,7 @@ func getVAPIDAuthorizationHeader(
 	}
 
 	// Decode the VAPID public key
-	pubKey, err := decodeBas64Safe(vapidPublicKey)
+	pubKey, err := base64.RawURLEncoding.DecodeString(vapidPublicKey)
 	if err != nil {
 		return "", err
 	}

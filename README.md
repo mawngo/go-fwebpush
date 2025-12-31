@@ -31,10 +31,6 @@ The library applies various optimizations to improve performance, including:
   by 1.5x if enabled alone, and 15x if enabled along with the `WithVAPIDTokenTTL` above (this huge different is due to
   some design decision that favor
   simplicity in implementation).
-- `WithBase64Encoding` Allow user to opt in more performance base64 implementation, for
-  example: https://github.com/cristalhq/base64. However, be aware that benchmark shows no difference when switched to
-  that
-  library.
 - `WithRandReader` Allow user to opt in faster rand.Reader.
 
 ## Usage

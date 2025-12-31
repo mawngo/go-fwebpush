@@ -24,14 +24,6 @@ func WithVAPIDTokenTTL(exp time.Duration) VAPIDPusherOption {
 	}
 }
 
-// WithBase64Encoding allow switching base64 implementation.
-// Must be url-safe, no padding encoding.
-func WithBase64Encoding(enc Base64Encoding) VAPIDPusherOption {
-	return func(pusher *VAPIDPusher) {
-		pusher.base64Encoding = enc
-	}
-}
-
 // WithRandReader allow switching randReader implementation.
 func WithRandReader(rand io.Reader) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {
@@ -64,7 +56,7 @@ func WithLocalSecretTTLFn(fn func() time.Duration) VAPIDPusherOption {
 // WithRecordSize configure padding of the message payload.
 // Payload that has length exceed the configured size will not be padded.
 // The maximum accepted value is [MaxRecordSize].
-// The default value is 0 (disabled)
+// The default value is 0 (disabled).
 func WithRecordSize(size int) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {
 		pusher.recordSize = min(max(size, 0), MaxRecordSize)

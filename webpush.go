@@ -68,13 +68,14 @@ const (
 	sharedECDHSecretOffset = authSecretLen
 	hkdfOffset             = sharedECDHSecretOffset + sharedECDHSecretLen
 
-	prkOffset            = hkdfOffset + hkdfLen
-	dhOffset             = prkOffset + webPushInfoLen
-	localPublicKeyOffset = dhOffset + p256dhLen
+	prkOffset          = hkdfOffset + hkdfLen
+	dhOffset           = prkOffset + webPushInfoLen
+	prkPublicKeyOffset = dhOffset + p256dhLen
 
-	rsOffset   = saltLen
-	keyOffset  = rsOffset + rsLen
-	dataOffset = keyOffset + 1 + localPublicKeyLen
+	rsOffset             = saltLen
+	keyOffset            = rsOffset + rsLen
+	localPublicKeyOffset = keyOffset + 1
+	dataOffset           = localPublicKeyOffset + localPublicKeyLen
 )
 
 type VAPIDPusher struct {
@@ -105,7 +106,6 @@ func NewVAPIDPusher(
 	options ...VAPIDPusherOption,
 ) (*VAPIDPusher, error) {
 	c := &VAPIDPusher{
-		subject:        "mailto:" + subject,
 		vapidTokenTTL:  12 * time.Hour,
 		cache:          make(map[string]*reusableKey),
 		vapidTTLBuffer: 1 * time.Hour,
@@ -115,6 +115,7 @@ func NewVAPIDPusher(
 	for _, opt := range options {
 		opt(c)
 	}
+
 	if !strings.HasPrefix(subject, "mailto:") && !strings.HasPrefix(subject, "https:") {
 		subject = "mailto:" + subject
 	}
@@ -212,7 +213,29 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		return nil, err
 	}
 
-	keyBuf := make([]byte, localPublicKeyOffset+localPublicKeyLen)
+	// Pre-alloc for record.
+	dataLen := len(message) + 1
+	cipherTextLen := dataLen + gcmTagLen
+	recordLen := headerLen + cipherTextLen
+	if recordLen > p.maxRecordSize {
+		return nil, ErrMaxSizeExceeded
+	}
+
+	// Calculate padded size.
+	recordSize := p.recordSize
+	if options.RecordSize > 0 {
+		recordSize = options.RecordSize
+	}
+	if recordLen < recordSize {
+		padLen := recordSize - recordLen
+		recordLen = recordSize
+		cipherTextLen += padLen
+		dataLen += padLen
+	}
+	record := make([]byte, recordLen)
+
+	// Pre-alloc for keys.
+	keyBuf := make([]byte, prkPublicKeyOffset+localPublicKeyLen)
 	// Decode auth and P256dh into a pre allocated buffer.
 	authSecret := keyBuf[:authSecretLen:authSecretLen]
 	dh := keyBuf[dhOffset : dhOffset+p256dhLen : dhOffset+p256dhLen]
@@ -224,7 +247,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 
 	// GENERATE SHARED AND PUBLIC KEY.
-	localPublicKeyBytes := keyBuf[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
+	localPublicKeyBytes := record[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
 	var sharedECDHSecret []byte
 
 	var now time.Time
@@ -243,7 +266,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		}
 	} else {
 		// We need to copy instead of re-assign, as the localPublicKeyBytes is actually a required part
-		// of prkInfo
+		// of the record.
 		copy(localPublicKeyBytes, keys.localPublicKeyBytes)
 		// Derive ECDH shared secret.
 		dhPublicKey, err := keys.curve.NewPublicKey(dh)
@@ -266,28 +289,6 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 
 	// GENERATE PAYLOAD.
 	bufHKDF := keyBuf[hkdfOffset:prkOffset:prkOffset]
-	prkInfo := keyBuf[prkOffset:]
-
-	// Pre-alloc for record.
-	dataLen := len(message) + 1
-	cipherTextLen := dataLen + gcmTagLen
-	recordLen := headerLen + cipherTextLen
-	if recordLen > p.maxRecordSize {
-		return nil, ErrMaxSizeExceeded
-	}
-
-	// Calculate padded size.
-	recordSize := p.recordSize
-	if options.RecordSize > 0 {
-		recordSize = options.RecordSize
-	}
-	if recordLen < recordSize {
-		padLen := recordSize - recordLen
-		recordLen = recordSize
-		cipherTextLen += padLen
-		dataLen += padLen
-	}
-	record := make([]byte, recordLen)
 	salt := record[:saltLen:saltLen]
 	rs := record[rsOffset : rsOffset+rsLen : rsOffset+rsLen]
 	// Use data slice for both data and cipher text.
@@ -296,7 +297,9 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	// Start generating payload
 	hash := sha256.New
 	// ikm.
-	copy(prkInfo, webpushInfo)
+	copy(keyBuf[prkOffset:prkOffset+webPushInfoLen:prkOffset+webPushInfoLen], webpushInfo)
+	copy(keyBuf[prkPublicKeyOffset:prkPublicKeyOffset+localPublicKeyLen:prkPublicKeyOffset+localPublicKeyLen], localPublicKeyBytes)
+	prkInfo := keyBuf[prkOffset:]
 	prkHKDF := hkdf.New(hash, sharedECDHSecret, authSecret, prkInfo)
 	ikm, err := getHKDFKey(prkHKDF, bufHKDF[0:32:32])
 	if err != nil {
@@ -341,10 +344,8 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	binary.BigEndian.PutUint32(rs, MaxRecordSize)
 
 	// Encryption Content-Coding Header.
-	w := len(salt) + len(rs)
-	record[w] = byte(len(localPublicKeyBytes))
-	copy(record[w+1:], localPublicKeyBytes)
-	copy(record[w+1+len(localPublicKeyBytes):], ciphertext)
+	record[keyOffset] = byte(len(localPublicKeyBytes))
+	copy(record[dataOffset:], ciphertext)
 
 	// SEND REQUEST.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.Endpoint, bytes.NewReader(record))

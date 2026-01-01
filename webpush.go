@@ -403,32 +403,25 @@ func decodeBase64(key string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(key)
 }
 
-func decodeBase64Buff(key string, buff []byte) error {
+func decodeBase64Buff(key string, buff []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("base64 data overflow")
+		}
+	}()
 	expectedLen := cap(buff)
 	src := []byte(key)
-	if base64.RawURLEncoding.DecodedLen(len(src)) == expectedLen {
-		n, err := base64.RawURLEncoding.Decode(buff, src)
-		if err == nil && n == expectedLen {
-			return nil
-		}
+	if n, err := base64.RawURLEncoding.Decode(buff, src); err == nil && n == expectedLen {
+		return nil
 	}
-	if base64.URLEncoding.DecodedLen(len(src)) == expectedLen {
-		n, err := base64.URLEncoding.Decode(buff, src)
-		if err == nil && n == expectedLen {
-			return nil
-		}
+	if n, err := base64.URLEncoding.Decode(buff, src); err == nil && n == expectedLen {
+		return nil
 	}
-	if base64.RawStdEncoding.DecodedLen(len(src)) == expectedLen {
-		n, err := base64.RawStdEncoding.Decode(buff, src)
-		if err == nil && n == expectedLen {
-			return nil
-		}
+	if n, err := base64.RawStdEncoding.Decode(buff, src); err == nil && n == expectedLen {
+		return nil
 	}
-	if base64.StdEncoding.DecodedLen(len(src)) == expectedLen {
-		n, err := base64.StdEncoding.Decode(buff, src)
-		if err == nil && n == expectedLen {
-			return nil
-		}
+	if n, err := base64.StdEncoding.Decode(buff, src); err == nil && n == expectedLen {
+		return nil
 	}
 	return fmt.Errorf("invalid base64 data length")
 }

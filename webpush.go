@@ -94,6 +94,7 @@ type VAPIDPusher struct {
 	randReader       io.Reader
 	recordSize       int
 	maxRecordSize    int
+	keyBufPool       sync.Pool
 
 	mu    sync.RWMutex
 	cache map[string]*reusableKey // Cache of VAPID JWT token by audience.
@@ -167,7 +168,10 @@ type LocalKey struct {
 	// Public generated public key.
 	Public string `json:"p"`
 	// Secret generated secret.
-	Secret string `json:"s"`
+	// Deprecated: switched to IKM caching.
+	Secret string `json:"s,omitempty"`
+	// IKM generated ikm.
+	IKM string `json:"m,omitempty"`
 	// At creation timestamp, used for checking expiration.
 	At int64 `json:"a"`
 }
@@ -236,31 +240,22 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 
 	// Pre-alloc for keys.
 	keyBuf := make([]byte, prkPublicKeyOffset+localPublicKeyLen)
-	// Decode auth and P256dh into a pre allocated buffer.
-	authSecret := keyBuf[:authSecretLen:authSecretLen]
-	dh := keyBuf[dhOffset : dhOffset+p256dhLen : dhOffset+p256dhLen]
-	if err := decodeBase64Buff(sub.Keys.Auth, authSecret); err != nil {
-		return nil, errors.Join(ErrEncryption, err)
-	}
-	if err := decodeBase64Buff(sub.Keys.P256dh, dh); err != nil {
-		return nil, errors.Join(ErrEncryption, err)
-	}
+	hash := sha256.New
 
-	// GENERATE SHARED AND PUBLIC KEY.
+	// GENERATE IKM AND PUBLIC KEY.
 	localPublicKeyBytes := record[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
-	var sharedECDHSecret []byte
+	ikm := keyBuf[hkdfOffset : hkdfOffset+32 : hkdfOffset+32]
 
 	var now time.Time
 	if p.localSecretTTLFn != nil {
 		now = time.Now()
 	}
-	if p.localSecretTTLFn != nil && sub.LocalKey != nil && sub.LocalKey.At > now.Add(-p.localSecretTTLFn()).UnixMilli() {
-		// Use publicKey and secret from LocalKey.
+	if p.localSecretTTLFn != nil && sub.LocalKey != nil && sub.LocalKey.At > now.Add(-p.localSecretTTLFn()).UnixMilli() && sub.LocalKey.IKM != "" {
+		// Use publicKey and ikm from LocalKey.
 		if err = decodeBase64Buff(sub.LocalKey.Public, localPublicKeyBytes); err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
-		sharedECDHSecret = keyBuf[sharedECDHSecretOffset : sharedECDHSecretOffset+sharedECDHSecretLen : sharedECDHSecretOffset+sharedECDHSecretLen]
-		if err = decodeBase64Buff(sub.LocalKey.Secret, sharedECDHSecret); err != nil {
+		if err = decodeBase64Buff(sub.LocalKey.IKM, ikm); err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
 	} else {
@@ -268,19 +263,39 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		// of the record.
 		copy(localPublicKeyBytes, keys.localPublicKeyBytes)
 		// Derive ECDH shared secret.
+		// Decode auth and P256dh into a pre allocated buffer.
+		authSecret := keyBuf[:authSecretLen:authSecretLen]
+		dh := keyBuf[dhOffset : dhOffset+p256dhLen : dhOffset+p256dhLen]
+		if err := decodeBase64Buff(sub.Keys.Auth, authSecret); err != nil {
+			return nil, errors.Join(ErrEncryption, err)
+		}
+		if err := decodeBase64Buff(sub.Keys.P256dh, dh); err != nil {
+			return nil, errors.Join(ErrEncryption, err)
+		}
 		dhPublicKey, err := keys.curve.NewPublicKey(dh)
 		if err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
-		sharedECDHSecret, err = keys.localPrivateKey.ECDH(dhPublicKey)
+		sharedECDHSecret, err := keys.localPrivateKey.ECDH(dhPublicKey)
 		if err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
+
+		// ikm.
+		copy(keyBuf[prkOffset:prkOffset+webPushInfoLen:prkOffset+webPushInfoLen], webpushInfo)
+		copy(keyBuf[prkPublicKeyOffset:prkPublicKeyOffset+localPublicKeyLen:prkPublicKeyOffset+localPublicKeyLen], localPublicKeyBytes)
+		prkInfo := keyBuf[prkOffset:]
+		prkHKDF := hkdf.New(hash, sharedECDHSecret, authSecret, prkInfo)
+		ikm, err = getHKDFKey(prkHKDF, ikm)
+		if err != nil {
+			return nil, errors.Join(ErrEncryption, err)
+		}
+
 		// Update LocalKey if enabled.
 		if p.localSecretTTLFn != nil {
 			sub.LocalKey = &LocalKey{
 				Public: encodeBase64String(localPublicKeyBytes),
-				Secret: encodeBase64String(sharedECDHSecret),
+				IKM:    encodeBase64String(ikm),
 				At:     now.UnixMilli(),
 			}
 		}
@@ -292,18 +307,6 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	rs := record[rsOffset : rsOffset+rsLen : rsOffset+rsLen]
 	// Use data slice for both data and cipher text.
 	data := record[dataOffset : dataOffset+dataLen : dataOffset+cipherTextLen]
-
-	// Start generating payload
-	hash := sha256.New
-	// ikm.
-	copy(keyBuf[prkOffset:prkOffset+webPushInfoLen:prkOffset+webPushInfoLen], webpushInfo)
-	copy(keyBuf[prkPublicKeyOffset:prkPublicKeyOffset+localPublicKeyLen:prkPublicKeyOffset+localPublicKeyLen], localPublicKeyBytes)
-	prkInfo := keyBuf[prkOffset:]
-	prkHKDF := hkdf.New(hash, sharedECDHSecret, authSecret, prkInfo)
-	ikm, err := getHKDFKey(prkHKDF, bufHKDF[0:32:32])
-	if err != nil {
-		return nil, errors.Join(ErrEncryption, err)
-	}
 
 	err = p.genSalt(salt)
 	if err != nil {
@@ -346,7 +349,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	record[keyOffset] = byte(len(localPublicKeyBytes))
 	copy(record[dataOffset:], ciphertext)
 
-	// SEND REQUEST.
+	// PREPARE REQUEST.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.Endpoint, bytes.NewReader(record))
 	if err != nil {
 		return nil, err

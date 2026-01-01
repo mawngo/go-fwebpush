@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -78,7 +79,7 @@ const (
 
 type VAPIDPusher struct {
 	client                   *http.Client
-	mailtoSub                string        // Sub in VAPID JWT token.
+	subject                  string        // Sub in VAPID JWT token.
 	vapidPublicKeyHeaderPart string        // VAPID public key passed in the VAPID Authorization header (format: `, k=<key`).
 	vapidPrivateKey          []byte        // VAPID private key, used to sign VAPID JWT token.
 	vapidTokenTTL            time.Duration // Optional, expiration for VAPID JWT token.
@@ -104,7 +105,7 @@ func NewVAPIDPusher(
 	options ...VAPIDPusherOption,
 ) (*VAPIDPusher, error) {
 	c := &VAPIDPusher{
-		mailtoSub:      "mailto:" + subject,
+		subject:        "mailto:" + subject,
 		vapidTokenTTL:  12 * time.Hour,
 		cache:          make(map[string]*reusableKey),
 		vapidTTLBuffer: 1 * time.Hour,
@@ -114,6 +115,10 @@ func NewVAPIDPusher(
 	for _, opt := range options {
 		opt(c)
 	}
+	if !strings.HasPrefix(subject, "mailto:") && !strings.HasPrefix(subject, "https:") {
+		subject = "mailto:" + subject
+	}
+	c.subject = subject
 
 	// Decode the VAPID private key.
 	var err error

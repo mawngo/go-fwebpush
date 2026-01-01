@@ -87,7 +87,7 @@ func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string) (string, time.Ti
 	}
 	claims := &jwt.RegisteredClaims{
 		Audience:  aud,
-		Subject:   p.mailtoSub,
+		Subject:   p.subject,
 		ExpiresAt: exp.Unix(),
 	}
 	token, err := jwt.NewBuilder(signer).Build(claims)

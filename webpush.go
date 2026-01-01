@@ -10,13 +10,15 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"golang.org/x/crypto/hkdf"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 	"unsafe"
+
+	"golang.org/x/crypto/hkdf"
 )
 
 const MaxRecordSize = 4096
@@ -30,11 +32,49 @@ var (
 	webpushInfo              = []byte("WebPush: info\x00")
 )
 
+// Pre-allocated byte buffer format
+//   - [hkdf] authSecret (16)
+//   - [hkdf] sharedECDHSecret (32)
+//   - [hkdf] prkHKDF (60)
+//   - [prk] webpushInfo (14)
+//   - [prk] dh (65)
+//   - [prk] localPublicKey (65)
+//   - [record] salt (16)
+//   - [record] rs (4)
+//   - [record] localPublicKeyLen (1)
+//   - [record] localPublicKey (65)
+//   - [record] data
+//   - [record] padding delimiter (1)
+//   - [record] padding
+//   - [record] gcmTag (16)
 const (
-	hkdfLen    = 60
-	saltLen    = 16
-	gcmTagSize = 16
-	rsLen      = 4
+	authSecretLen       = 16
+	sharedECDHSecretLen = 32
+	hkdfLen             = 60
+
+	webPushInfoLen    = 14
+	p256dhLen         = 65
+	localPublicKeyLen = 65
+
+	saltLen   = 16
+	rsLen     = 4
+	gcmTagLen = 16
+	headerLen = saltLen + rsLen + 1 + localPublicKeyLen
+)
+
+const (
+	authSecretOffset       = 0
+	sharedECDHSecretOffset = authSecretLen
+	hkdfOffset             = sharedECDHSecretOffset + sharedECDHSecretLen
+
+	prkOffset            = hkdfOffset + hkdfLen
+	dhOffset             = prkOffset + webPushInfoLen
+	localPublicKeyOffset = dhOffset + p256dhLen
+
+	recordOffset = localPublicKeyOffset + localPublicKeyLen
+	rsOffset     = recordOffset + saltLen
+	keyOffset    = rsOffset + rsLen
+	dataOffset   = keyOffset + 1 + localPublicKeyLen
 )
 
 type VAPIDPusher struct {
@@ -46,7 +86,7 @@ type VAPIDPusher struct {
 	// vapidTTLBuffer additional duration added to expiration.
 	// The key will expire later than configured expiration this amount of duration,
 	// while the validation of the key will expire sooner than configured expiration this amount of duration,
-	// thus make the actual expiration time equal to configured expiration.
+	// thus making the actual expiration time equal to configured expiration.
 	// It is recommended to set this field to at least 30 minutes.
 	vapidTTLBuffer   time.Duration
 	localSecretTTLFn func() time.Duration // Optional, enable local public key and secret reuse.
@@ -99,7 +139,7 @@ func NewVAPIDPusher(
 
 // Options are config and extra params needed to send a notification.
 type Options struct {
-	Topic      string  // Set the Topic header to collapse pending messages.
+	Topic      string  // Set the Topic header to collapse a pending message.
 	TTL        int     // Set the TTL on the endpoint POST request.
 	Urgency    Urgency // Set the Urgency header.
 	RecordSize int     // Set the target record size for padding.
@@ -162,24 +202,47 @@ func (p *VAPIDPusher) SendNotificationOptions(ctx context.Context, message []byt
 //
 // It is recommended to use [VAPIDPusher.SendNotification] directly instead.
 func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []byte, sub *Subscription, options Options) (*http.Request, error) {
-	authSecret, err := decodeBase64(sub.Keys.Auth)
-	if err != nil {
-		return nil, errors.Join(ErrEncryption, err)
-	}
-	dh, err := decodeBase64(sub.Keys.P256dh)
-	if err != nil {
-		return nil, errors.Join(ErrEncryption, err)
-	}
-
 	// GENERATE VAPID TOKEN AND LOCAL KEYPAIR.
 	keys, err := p.getCachedKeys(sub.Endpoint)
 	if err != nil {
 		return nil, err
 	}
 
+	// Pre-alloc everything.
+	dataLen := len(message) + 1
+	cipherTextLen := dataLen + gcmTagLen
+	recordLen := headerLen + cipherTextLen
+	if recordLen > p.maxRecordSize {
+		return nil, ErrMaxSizeExceeded
+	}
+
+	// Calculate padded size.
+	recordSize := p.recordSize
+	if options.RecordSize > 0 {
+		recordSize = options.RecordSize
+	}
+	if recordLen < recordSize {
+		padLen := recordSize - recordLen
+		recordLen = recordSize
+		cipherTextLen += padLen
+		dataLen += padLen
+	}
+	buf := make([]byte, dataOffset+cipherTextLen)
+
+	// Decode auth and P256dh into a pre allocated buffer.
+	authSecret := buf[authSecretOffset : authSecretOffset+authSecretLen : authSecretOffset+authSecretLen]
+	dh := buf[dhOffset : dhOffset+p256dhLen : dhOffset+p256dhLen]
+	if err := decodeBase64Buff(sub.Keys.Auth, authSecret); err != nil {
+		return nil, errors.Join(ErrEncryption, err)
+	}
+	if err := decodeBase64Buff(sub.Keys.P256dh, dh); err != nil {
+		return nil, errors.Join(ErrEncryption, err)
+	}
+
 	// GENERATE SHARED AND PUBLIC KEY.
-	var localPublicKeyBytes []byte
+	localPublicKeyBytes := buf[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
 	var sharedECDHSecret []byte
+
 	var now time.Time
 	isLocalSecretCacheEnabled := p.localSecretTTLFn != nil && sub.LocalKey != nil
 	if isLocalSecretCacheEnabled {
@@ -187,16 +250,17 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 	if isLocalSecretCacheEnabled && sub.LocalKey.At > now.Add(-p.localSecretTTLFn()).UnixMilli() {
 		// Use publicKey and secret from LocalKey.
-		localPublicKeyBytes, err = decodeBase64String(sub.LocalKey.Public)
-		if err != nil {
+		if err = decodeBase64Buff(sub.LocalKey.Public, localPublicKeyBytes); err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
-		sharedECDHSecret, err = decodeBase64String(sub.LocalKey.Secret)
-		if err != nil {
+		sharedECDHSecret = buf[sharedECDHSecretOffset : sharedECDHSecretOffset+sharedECDHSecretLen : sharedECDHSecretOffset+sharedECDHSecretLen]
+		if err = decodeBase64Buff(sub.LocalKey.Secret, sharedECDHSecret); err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
 	} else {
-		localPublicKeyBytes = keys.localPublicKeyBytes
+		// We need to copy instead of re-assign, as the localPublicKeyBytes is actually a required part
+		// of prkInfo
+		copy(localPublicKeyBytes, keys.localPublicKeyBytes)
 		// Derive ECDH shared secret.
 		dhPublicKey, err := keys.curve.NewPublicKey(dh)
 		if err != nil {
@@ -217,52 +281,19 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 
 	// GENERATE PAYLOAD.
-	// Pre-alloc everything.
-	prkLen := len(webpushInfo) + len(dh) + len(localPublicKeyBytes)
-	// Add 1 byte for padding delimiter.
-	dataLen := len(message) + 1
-	cipherTextLen := dataLen + gcmTagSize
-	recordLen := saltLen + rsLen + 1 + len(localPublicKeyBytes) + cipherTextLen
-	if recordLen > p.maxRecordSize {
-		return nil, ErrMaxSizeExceeded
-	}
+	bufHKDF := buf[hkdfOffset:prkOffset:prkOffset]
+	prkInfo := buf[prkOffset:recordOffset:recordOffset]
 
-	// Calculate size for padding.
-	recordSize := p.recordSize
-	if options.RecordSize > 0 {
-		recordSize = options.RecordSize
-	}
-	if recordLen < recordSize {
-		padLen := recordSize - recordLen
-		recordLen = recordSize
-		cipherTextLen += padLen
-		dataLen += padLen
-	}
-
-	// buf is just for bulk allocation and re-slicing, does not use it directly.
-	buf := make([]byte, prkLen+hkdfLen+recordLen)
-	i := 0
-	prkInfo := buf[i:prkLen:prkLen]
-	i += prkLen
-	bufHKDF := buf[i : i+hkdfLen : i+hkdfLen]
-	i += hkdfLen
-
-	// The salt, rs and cipher text already inside the record, so we can use it directly.
-	record := buf[i : i+recordLen : i+recordLen]
-	i = 0
-	salt := record[i : i+saltLen : i+saltLen]
-	i += saltLen
-	rs := record[i : i+rsLen : i+rsLen]
-	i += rsLen + 1 + len(localPublicKeyBytes)
+	record := buf[recordOffset : recordOffset+recordLen : recordOffset+recordLen]
+	salt := buf[recordOffset : recordOffset+saltLen : recordOffset+saltLen]
+	rs := buf[rsOffset : rsOffset+rsLen : rsOffset+rsLen]
 	// Use data slice for both data and cipher text.
-	data := record[i : i+dataLen : i+cipherTextLen]
+	data := buf[dataOffset : dataOffset+dataLen : dataOffset+cipherTextLen]
 
 	// Start generating payload
 	hash := sha256.New
 	// ikm.
 	copy(prkInfo, webpushInfo)
-	copy(prkInfo[len(webpushInfo):], dh)
-	copy(prkInfo[len(webpushInfo)+len(dh):], localPublicKeyBytes)
 	prkHKDF := hkdf.New(hash, sharedECDHSecret, authSecret, prkInfo)
 	ikm, err := getHKDFKey(prkHKDF, bufHKDF[0:32:32])
 	if err != nil {
@@ -290,7 +321,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	if err != nil {
 		return nil, errors.Join(ErrEncryption, err)
 	}
-	gcm, err := cipher.NewGCMWithTagSize(c, gcmTagSize)
+	gcm, err := cipher.NewGCMWithTagSize(c, gcmTagLen)
 	if err != nil {
 		return nil, errors.Join(ErrEncryption, err)
 	}
@@ -307,8 +338,6 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	binary.BigEndian.PutUint32(rs, MaxRecordSize)
 
 	// Encryption Content-Coding Header.
-	copy(record, salt)
-	copy(record[len(salt):], rs)
 	w := len(salt) + len(rs)
 	record[w] = byte(len(localPublicKeyBytes))
 	copy(record[w+1:], localPublicKeyBytes)
@@ -376,14 +405,38 @@ func decodeBase64(key string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(key)
 }
 
-func decodeBase64String(key string) ([]byte, error) {
-	return base64.RawURLEncoding.DecodeString(key)
+func decodeBase64Buff(key string, buff []byte) error {
+	expectedLen := cap(buff)
+	src := unsafeBytes(key)
+	if base64.RawURLEncoding.DecodedLen(len(src)) == expectedLen {
+		n, err := base64.RawURLEncoding.Decode(buff, src)
+		if err == nil && n == expectedLen {
+			return nil
+		}
+	}
+	if base64.URLEncoding.DecodedLen(len(src)) == expectedLen {
+		n, err := base64.URLEncoding.Decode(buff, src)
+		if err == nil && n == expectedLen {
+			return nil
+		}
+	}
+	if base64.RawStdEncoding.DecodedLen(len(src)) == expectedLen {
+		n, err := base64.RawStdEncoding.Decode(buff, src)
+		if err == nil && n == expectedLen {
+			return nil
+		}
+	}
+	if base64.StdEncoding.DecodedLen(len(src)) == expectedLen {
+		n, err := base64.StdEncoding.Decode(buff, src)
+		if err == nil && n == expectedLen {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid base64 data length")
 }
 
 func encodeBase64String(src []byte) string {
-	buf := make([]byte, base64.RawURLEncoding.EncodedLen(len(src)))
-	base64.RawURLEncoding.Encode(buf, src)
-	return unsafeString(buf)
+	return base64.RawURLEncoding.EncodeToString(src)
 }
 
 // getHKDFKey Returns a key of length "length" given a hkdf function.
@@ -395,15 +448,9 @@ func getHKDFKey(hkdf io.Reader, dst []byte) ([]byte, error) {
 	return dst, nil
 }
 
-// unsafeString returns a string pointer without allocation.
-func unsafeString(b []byte) string {
-	// #nosec G103
-	return *(*string)(unsafe.Pointer(&b))
-}
-
-// unsafeBytes returns a byte pointer without allocation.
-// This is an unsafe way, the result string and []byte buffer share the same bytes.
-// Please make sure not to modify the bytes in the []byte buffer if the string still survives!
+// This conversion *does not* copy data. Note that casting via "([]byte)(string)" *does* copy data.
+// Also note that you *should not* change the byte slice after conversion, because Go strings
+// are treated as immutable. This would cause a segmentation violation panic.
 func unsafeBytes(s string) []byte {
 	// #nosec G103
 	return unsafe.Slice(unsafe.StringData(s), len(s))

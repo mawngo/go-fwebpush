@@ -11,14 +11,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/hkdf"
 	"io"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
-	"unsafe"
-
-	"golang.org/x/crypto/hkdf"
 )
 
 const MaxRecordSize = 4096
@@ -407,7 +405,7 @@ func decodeBase64(key string) ([]byte, error) {
 
 func decodeBase64Buff(key string, buff []byte) error {
 	expectedLen := cap(buff)
-	src := unsafeBytes(key)
+	src := []byte(key)
 	if base64.RawURLEncoding.DecodedLen(len(src)) == expectedLen {
 		n, err := base64.RawURLEncoding.Decode(buff, src)
 		if err == nil && n == expectedLen {
@@ -446,12 +444,4 @@ func getHKDFKey(hkdf io.Reader, dst []byte) ([]byte, error) {
 		return dst, err
 	}
 	return dst, nil
-}
-
-// This conversion *does not* copy data. Note that casting via "([]byte)(string)" *does* copy data.
-// Also note that you *should not* change the byte slice after conversion, because Go strings
-// are treated as immutable. This would cause a segmentation violation panic.
-func unsafeBytes(s string) []byte {
-	// #nosec G103
-	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

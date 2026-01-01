@@ -31,12 +31,15 @@ var (
 )
 
 // Pre-allocated byte buffer format
+// Key buffer:
 //   - [hkdf] authSecret (16)
 //   - [hkdf] sharedECDHSecret (32)
 //   - [hkdf] prkHKDF (60)
 //   - [prk] webpushInfo (14)
 //   - [prk] dh (65)
 //   - [prk] localPublicKey (65)
+//
+// Record buffer:
 //   - [record] salt (16)
 //   - [record] rs (4)
 //   - [record] localPublicKeyLen (1)
@@ -61,7 +64,6 @@ const (
 )
 
 const (
-	authSecretOffset       = 0
 	sharedECDHSecretOffset = authSecretLen
 	hkdfOffset             = sharedECDHSecretOffset + sharedECDHSecretLen
 
@@ -69,10 +71,9 @@ const (
 	dhOffset             = prkOffset + webPushInfoLen
 	localPublicKeyOffset = dhOffset + p256dhLen
 
-	recordOffset = localPublicKeyOffset + localPublicKeyLen
-	rsOffset     = recordOffset + saltLen
-	keyOffset    = rsOffset + rsLen
-	dataOffset   = keyOffset + 1 + localPublicKeyLen
+	rsOffset   = saltLen
+	keyOffset  = rsOffset + rsLen
+	dataOffset = keyOffset + 1 + localPublicKeyLen
 )
 
 type VAPIDPusher struct {
@@ -206,30 +207,10 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		return nil, err
 	}
 
-	// Pre-alloc everything.
-	dataLen := len(message) + 1
-	cipherTextLen := dataLen + gcmTagLen
-	recordLen := headerLen + cipherTextLen
-	if recordLen > p.maxRecordSize {
-		return nil, ErrMaxSizeExceeded
-	}
-
-	// Calculate padded size.
-	recordSize := p.recordSize
-	if options.RecordSize > 0 {
-		recordSize = options.RecordSize
-	}
-	if recordLen < recordSize {
-		padLen := recordSize - recordLen
-		recordLen = recordSize
-		cipherTextLen += padLen
-		dataLen += padLen
-	}
-	buf := make([]byte, dataOffset+cipherTextLen)
-
+	keyBuf := make([]byte, localPublicKeyOffset+localPublicKeyLen)
 	// Decode auth and P256dh into a pre allocated buffer.
-	authSecret := buf[authSecretOffset : authSecretOffset+authSecretLen : authSecretOffset+authSecretLen]
-	dh := buf[dhOffset : dhOffset+p256dhLen : dhOffset+p256dhLen]
+	authSecret := keyBuf[:authSecretLen:authSecretLen]
+	dh := keyBuf[dhOffset : dhOffset+p256dhLen : dhOffset+p256dhLen]
 	if err := decodeBase64Buff(sub.Keys.Auth, authSecret); err != nil {
 		return nil, errors.Join(ErrEncryption, err)
 	}
@@ -238,7 +219,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 
 	// GENERATE SHARED AND PUBLIC KEY.
-	localPublicKeyBytes := buf[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
+	localPublicKeyBytes := keyBuf[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
 	var sharedECDHSecret []byte
 
 	var now time.Time
@@ -251,7 +232,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 		if err = decodeBase64Buff(sub.LocalKey.Public, localPublicKeyBytes); err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
-		sharedECDHSecret = buf[sharedECDHSecretOffset : sharedECDHSecretOffset+sharedECDHSecretLen : sharedECDHSecretOffset+sharedECDHSecretLen]
+		sharedECDHSecret = keyBuf[sharedECDHSecretOffset : sharedECDHSecretOffset+sharedECDHSecretLen : sharedECDHSecretOffset+sharedECDHSecretLen]
 		if err = decodeBase64Buff(sub.LocalKey.Secret, sharedECDHSecret); err != nil {
 			return nil, errors.Join(ErrEncryption, err)
 		}
@@ -279,14 +260,33 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	}
 
 	// GENERATE PAYLOAD.
-	bufHKDF := buf[hkdfOffset:prkOffset:prkOffset]
-	prkInfo := buf[prkOffset:recordOffset:recordOffset]
+	bufHKDF := keyBuf[hkdfOffset:prkOffset:prkOffset]
+	prkInfo := keyBuf[prkOffset:]
 
-	record := buf[recordOffset : recordOffset+recordLen : recordOffset+recordLen]
-	salt := buf[recordOffset : recordOffset+saltLen : recordOffset+saltLen]
-	rs := buf[rsOffset : rsOffset+rsLen : rsOffset+rsLen]
+	// Pre-alloc for record.
+	dataLen := len(message) + 1
+	cipherTextLen := dataLen + gcmTagLen
+	recordLen := headerLen + cipherTextLen
+	if recordLen > p.maxRecordSize {
+		return nil, ErrMaxSizeExceeded
+	}
+
+	// Calculate padded size.
+	recordSize := p.recordSize
+	if options.RecordSize > 0 {
+		recordSize = options.RecordSize
+	}
+	if recordLen < recordSize {
+		padLen := recordSize - recordLen
+		recordLen = recordSize
+		cipherTextLen += padLen
+		dataLen += padLen
+	}
+	record := make([]byte, recordLen)
+	salt := record[:saltLen:saltLen]
+	rs := record[rsOffset : rsOffset+rsLen : rsOffset+rsLen]
 	// Use data slice for both data and cipher text.
-	data := buf[dataOffset : dataOffset+dataLen : dataOffset+cipherTextLen]
+	data := record[dataOffset : dataOffset+dataLen : dataOffset+cipherTextLen]
 
 	// Start generating payload
 	hash := sha256.New

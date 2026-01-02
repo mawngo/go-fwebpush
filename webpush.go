@@ -441,8 +441,11 @@ func encodeBase64String(src []byte) string {
 // getHKDFKey Returns a key of length "length" given a hkdf function.
 func getHKDFKey(hkdf io.Reader, dst []byte) ([]byte, error) {
 	n, err := io.ReadFull(hkdf, dst)
-	if n != len(dst) || err != nil {
-		return dst, err
+	if err != nil {
+		return nil, err
+	}
+	if n != len(dst) {
+		return nil, fmt.Errorf("hkdf key length mismatch")
 	}
 	return dst, nil
 }

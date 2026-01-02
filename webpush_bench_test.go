@@ -263,6 +263,21 @@ func BenchmarkVapidAndLocalSecretCachingCacheInit(b *testing.B) {
 	}, WithVAPIDTokenTTL(time.Hour), WithLocalSecretTTL(time.Hour))
 }
 
+func BenchmarkGetCachedKey(b *testing.B) {
+	benchEachSub(b, func(b *testing.B, pusher *VAPIDPusher, sub Subscription, i int) {
+		b.Run(fmt.Sprintf("run_%d", i), func(b *testing.B) {
+			for b.Loop() {
+				sub := sub
+				_, err := pusher.getCachedKeys(sub.Endpoint)
+				if err != nil {
+					b.Fatal(err)
+					return
+				}
+			}
+		})
+	}, WithVAPIDTokenTTL(0))
+}
+
 func benchEachSub(b *testing.B, bench func(b *testing.B, pusher *VAPIDPusher, sub Subscription, i int), options ...VAPIDPusherOption) {
 	pusher, err := NewVAPIDPusher(
 		"example@example.com",

@@ -1,6 +1,9 @@
 package fastunsafeurl
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestParseSchemeHost(t *testing.T) {
 	cases := [][]any{
@@ -75,5 +78,29 @@ func TestParseHost(t *testing.T) {
 		if err != nil {
 			t.Fatal("Expected no error from", endpoint, "got", err)
 		}
+	}
+}
+
+func BenchmarkParseHost(b *testing.B) {
+	cases := []string{
+		"https://example.com",
+		"https://example.com/test123",
+		"abc://example.com/test123#frag?abc=1",
+		"a://b",
+		"http://user:account@example.com",
+		"http://user:account@example.com:8080",
+		"https://example.com:8080",
+		"https://updates.push.services.mozilla.com/wpush/v2/gAAAAA",
+		"https://fcm.googleapis.com/fcm/send/eKAWKNUIYFw:APA91bHkYaziMvso61arnA20A8j83Mv7uv8ud",
+	}
+	for i, v := range cases {
+		b.Run(fmt.Sprintf("run_%d", i), func(b *testing.B) {
+			for b.Loop() {
+				_, err := ParseHost(v)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

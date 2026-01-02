@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mawngo/go-fwebpush/fastunsafeurl"
-	"github.com/mawngo/go-fwebpush/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
 	"math/big"
 	"sync"
 	"time"
@@ -81,16 +81,16 @@ func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string) (string, time.Ti
 	// Always expire at least <additional time> (so the message won't expire when it reached the server).
 	exp := time.Now().Add(p.vapidTokenTTL + p.vapidTTLBuffer)
 	privKey := generateVAPIDHeaderKeys(p.vapidPrivateKey)
-	signer, err := jwt.NewSignerES(jwt.ES256, privKey)
+	signer, err := jwt2.NewSignerES(jwt2.ES256, privKey)
 	if err != nil {
 		return "", exp, err
 	}
-	claims := &jwt.RegisteredClaims{
+	claims := &jwt2.RegisteredClaims{
 		Audience:  aud,
 		Subject:   p.subject,
 		ExpiresAt: exp.Unix(),
 	}
-	token, err := jwt.NewBuilder(signer).Build(claims)
+	token, err := jwt2.NewBuilder(signer).Build(claims)
 	if err != nil {
 		return "", exp, err
 	}

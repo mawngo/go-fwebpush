@@ -5,33 +5,33 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
-	"github.com/mawngo/go-fwebpush/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
 	"io"
 	"testing"
 	"time"
 )
 
 func BenchmarkAlgES(b *testing.B) {
-	esAlgos := map[jwt.Algorithm]elliptic.Curve{
-		jwt.ES256: elliptic.P256(),
-		jwt.ES384: elliptic.P384(),
-		jwt.ES512: elliptic.P521(),
+	esAlgos := map[jwt2.Algorithm]elliptic.Curve{
+		jwt2.ES256: elliptic.P256(),
+		jwt2.ES384: elliptic.P384(),
+		jwt2.ES512: elliptic.P521(),
 	}
 	for algo, curve := range esAlgos {
 		key, errKey := ecdsa.GenerateKey(curve, rand.Reader)
 		if errKey != nil {
 			b.Fatal(errKey)
 		}
-		signer, errSigner := jwt.NewSignerES(algo, key)
+		signer, errSigner := jwt2.NewSignerES(algo, key)
 		if errSigner != nil {
 			b.Fatal(errSigner)
 		}
-		verifier, errVerifier := jwt.NewVerifierES(algo, &key.PublicKey)
+		verifier, errVerifier := jwt2.NewVerifierES(algo, &key.PublicKey)
 		if errVerifier != nil {
 			b.Fatal(errVerifier)
 		}
 
-		builder := jwt.NewBuilder(signer)
+		builder := jwt2.NewBuilder(signer)
 		b.Run("Sign-"+string(algo), func(b *testing.B) {
 			runSignerBench(b, builder)
 		})
@@ -41,11 +41,11 @@ func BenchmarkAlgES(b *testing.B) {
 	}
 }
 
-func runSignerBench(b *testing.B, builder *jwt.Builder) {
+func runSignerBench(b *testing.B, builder *jwt2.Builder) {
 	b.Helper()
 	b.ReportAllocs()
 
-	claims := jwt.RegisteredClaims{
+	claims := jwt2.RegisteredClaims{
 		ID:       "id",
 		Issuer:   "sdf",
 		IssuedAt: time.Now().Unix(),
@@ -62,12 +62,12 @@ func runSignerBench(b *testing.B, builder *jwt.Builder) {
 	sink(dummy)
 }
 
-func runVerifyBench(b *testing.B, builder *jwt.Builder, verifier jwt.Verifier) {
+func runVerifyBench(b *testing.B, builder *jwt2.Builder, verifier jwt2.Verifier) {
 	b.Helper()
 	const tokensCount = 32
-	tokens := make([]*jwt.Token, 0, tokensCount)
+	tokens := make([]*jwt2.Token, 0, tokensCount)
 	for i := 0; i < tokensCount; i++ {
-		token, err := builder.Build(jwt.RegisteredClaims{
+		token, err := builder.Build(jwt2.RegisteredClaims{
 			ID:       "id",
 			Issuer:   "sdf",
 			IssuedAt: time.Now().Unix(),

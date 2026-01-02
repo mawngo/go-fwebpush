@@ -211,8 +211,9 @@ func (p *VAPIDPusher) SendNotificationOptions(ctx context.Context, message []byt
 //
 // It is recommended to use [VAPIDPusher.SendNotification] directly instead.
 func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []byte, sub *Subscription, options Options) (*http.Request, error) {
+	now := time.Now()
 	// GENERATE VAPID TOKEN AND LOCAL KEYPAIR.
-	keys, err := p.getCachedKeys(sub.Endpoint)
+	keys, err := p.getCachedKeys(sub.Endpoint, now)
 	if err != nil {
 		return nil, err
 	}
@@ -245,11 +246,6 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	// GENERATE IKM AND PUBLIC KEY.
 	localPublicKeyBytes := record[localPublicKeyOffset : localPublicKeyOffset+localPublicKeyLen : localPublicKeyOffset+localPublicKeyLen]
 	ikm := keyBuf[hkdfOffset : hkdfOffset+32 : hkdfOffset+32]
-
-	var now time.Time
-	if p.localSecretTTLFn != nil {
-		now = time.Now()
-	}
 	if p.localSecretTTLFn != nil && sub.LocalKey != nil && sub.LocalKey.At > now.Add(-p.localSecretTTLFn()).UnixMilli() && sub.LocalKey.IKM != "" {
 		// Use publicKey and ikm from LocalKey.
 		if err = decodeBase64Buff(sub.LocalKey.Public, localPublicKeyBytes); err != nil {
@@ -379,7 +375,7 @@ func (p *VAPIDPusher) ExecuteRequest(req *http.Request) (*http.Response, error) 
 // GenVAPIDAuthHeader generate the web push vapid auth header.
 // Should only be used for debug/logging.
 func (p *VAPIDPusher) GenVAPIDAuthHeader(subscriptionEndpoint string) (string, error) {
-	keys, err := p.getCachedKeys(subscriptionEndpoint)
+	keys, err := p.getCachedKeys(subscriptionEndpoint, time.Now())
 	if err != nil {
 		return "", err
 	}

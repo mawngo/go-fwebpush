@@ -32,7 +32,7 @@ func TestVAPID(t *testing.T) {
 			}
 
 			// Get authentication header
-			keys, err := p.getCachedKeys(s.Endpoint)
+			keys, err := p.getCachedKeys(s.Endpoint, time.Now())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -91,7 +91,7 @@ func TestVAPID(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			regenerate, err := p.getCachedKeys(s.Endpoint)
+			regenerate, err := p.getCachedKeys(s.Endpoint, time.Now())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,12 +124,12 @@ func TestVAPIDCacheExpired(t *testing.T) {
 	}
 
 	// Get authentication header
-	keys, err := p.getCachedKeys(s.Endpoint)
+	keys, err := p.getCachedKeys(s.Endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	vapid := keys.vapid
-	regenerate, err := p.getCachedKeys(s.Endpoint)
+	regenerate, err := p.getCachedKeys(s.Endpoint, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

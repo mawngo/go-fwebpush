@@ -268,7 +268,7 @@ func BenchmarkGetCachedKey(b *testing.B) {
 		b.Run(fmt.Sprintf("run_%d", i), func(b *testing.B) {
 			for b.Loop() {
 				sub := sub
-				_, err := pusher.getCachedKeys(sub.Endpoint)
+				_, err := pusher.getCachedKeys(sub.Endpoint, time.Now())
 				if err != nil {
 					b.Fatal(err)
 					return

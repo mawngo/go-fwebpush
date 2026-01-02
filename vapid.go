@@ -15,14 +15,14 @@ import (
 	"time"
 )
 
-func (p *VAPIDPusher) getCachedKeys(endpoint string) (*reusableKey, error) {
+func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (*reusableKey, error) {
 	aud, _, err := fastunsafeurl.ParseSchemeHost(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing audience: %w", err)
 	}
 	// We should regenerate the token <additional time> before actual expires.
 	// So the min-acceptable expiration should be <additional time> after now.
-	nowExp := time.Now().Add(p.vapidTTLBuffer)
+	nowExp := now.Add(p.vapidTTLBuffer)
 	// Most of the time code will run into this path.
 	// Cache hit, not expired, use cached vapid.
 	p.mu.RLock()
@@ -46,7 +46,7 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string) (*reusableKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud)
+		auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud, now)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string) (*reusableKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	h, exp, err := p.doGetVAPIDAuthorizationHeader(aud)
+	h, exp, err := p.doGetVAPIDAuthorizationHeader(aud, now)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +77,9 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string) (*reusableKey, error) {
 	return auth, nil
 }
 
-func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string) (string, time.Time, error) {
+func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string, now time.Time) (string, time.Time, error) {
 	// Always expire at least <additional time> (so the message won't expire when it reached the server).
-	exp := time.Now().Add(p.vapidTokenTTL + p.vapidTTLBuffer)
+	exp := now.Add(p.vapidTokenTTL + p.vapidTTLBuffer)
 	privKey := generateVAPIDHeaderKeys(p.vapidPrivateKey)
 	signer, err := jwt2.NewSignerES(jwt2.ES256, privKey)
 	if err != nil {

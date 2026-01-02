@@ -97,7 +97,7 @@ type VAPIDPusher struct {
 	keyBufPool       sync.Pool
 
 	mu    sync.RWMutex
-	cache map[string]*reusableKey // Cache of VAPID JWT token by audience.
+	cache map[string]reusableKey // Cache of VAPID JWT token by audience.
 }
 
 func NewVAPIDPusher(
@@ -107,8 +107,8 @@ func NewVAPIDPusher(
 	options ...VAPIDPusherOption,
 ) (*VAPIDPusher, error) {
 	c := &VAPIDPusher{
-		vapidTokenTTL:  12 * time.Hour,
-		cache:          make(map[string]*reusableKey),
+		vapidTokenTTL:  4 * time.Hour,
+		cache:          make(map[string]reusableKey),
 		vapidTTLBuffer: 1 * time.Hour,
 		randReader:     rand.Reader,
 		maxRecordSize:  MaxRecordSize,

@@ -11,69 +11,48 @@ import (
 	"github.com/mawngo/go-fwebpush/fastunsafeurl"
 	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
 	"math/big"
-	"sync"
 	"time"
 )
 
-func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (*reusableKey, error) {
+func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey, error) {
 	aud, _, err := fastunsafeurl.ParseSchemeHost(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing audience: %w", err)
+		return reusableKey{}, fmt.Errorf("error parsing audience: %w", err)
 	}
-	// We should regenerate the token <additional time> before actual expires.
+	// Cache disabled.
+	if p.vapidTokenTTL <= 0 {
+		auth, err := p.doGenLocalKey()
+		if err != nil {
+			return reusableKey{}, err
+		}
+		auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud, now)
+		return auth, err
+	}
+
+	// We should regenerate the token <additional time> before actually expires.
 	// So the min-acceptable expiration should be <additional time> after now.
 	nowExp := now.Add(p.vapidTTLBuffer)
 	// Most of the time code will run into this path.
 	// Cache hit, not expired, use cached vapid.
 	p.mu.RLock()
-	auth := p.cache[aud]
-	if auth != nil && nowExp.Before(auth.exp) {
+	if auth := p.cache[aud]; nowExp.Before(auth.exp) {
 		p.mu.RUnlock()
 		return auth, nil
 	}
 	p.mu.RUnlock()
 
-	// Slow path. Cache won't hit.
-	// This path is not optimized, as it is only happening one for each host (audience).
-	if auth == nil {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		// Someone else has written to the cache.
-		if auth = p.cache[aud]; auth != nil {
-			return auth, nil
-		}
-		auth, err = p.doGenLocalKey()
-		if err != nil {
-			return nil, err
-		}
-		auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud, now)
-		if err != nil {
-			return nil, err
-		}
-		p.cache[aud] = auth
-		return auth, nil
-	}
-
-	// Cache hit, expired, regenerate vapid.
-	auth.mu.Lock()
-	defer auth.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	// Someone else has written to the cache.
-	if nowExp.Before(auth.exp) {
+	if auth := p.cache[aud]; nowExp.Before(auth.exp) {
 		return auth, nil
 	}
-	keys, err := p.doGenLocalKey()
+	auth, err := p.doGenLocalKey()
 	if err != nil {
-		return nil, err
+		return reusableKey{}, err
 	}
-	h, exp, err := p.doGetVAPIDAuthorizationHeader(aud, now)
-	if err != nil {
-		return nil, err
-	}
-	auth.curve = keys.curve
-	auth.localPrivateKey = keys.localPrivateKey
-	auth.localPublicKeyBytes = keys.localPublicKeyBytes
-	auth.vapid = h
-	auth.exp = exp
+	auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud, now)
+	p.cache[aud] = auth
 	return auth, nil
 }
 
@@ -97,15 +76,15 @@ func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string, now time.Time) (
 	return "vapid t=" + token.String() + p.vapidPublicKeyHeaderPart, exp, nil
 }
 
-func (p *VAPIDPusher) doGenLocalKey() (*reusableKey, error) {
+func (p *VAPIDPusher) doGenLocalKey() (reusableKey, error) {
 	curve := ecdh.P256()
 	// Application server key pairs (single use).
 	localPrivateKey, err := curve.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, errors.Join(ErrEncryption, err)
+		return reusableKey{}, errors.Join(ErrEncryption, err)
 	}
 	localPublicKeyBytes := localPrivateKey.PublicKey().Bytes()
-	return &reusableKey{
+	return reusableKey{
 		curve:               curve,
 		localPrivateKey:     localPrivateKey,
 		localPublicKeyBytes: localPublicKeyBytes,
@@ -163,7 +142,5 @@ type reusableKey struct {
 	curve               ecdh.Curve
 	localPrivateKey     *ecdh.PrivateKey
 	localPublicKeyBytes []byte
-
-	exp time.Time
-	mu  sync.Mutex
+	exp                 time.Time
 }

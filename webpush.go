@@ -240,6 +240,8 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	record := make([]byte, recordLen)
 
 	// Pre-alloc for keys.
+	// This buffer can be pooled, reduce allocations.
+	// Not sure about the performance impact through.
 	keyBuf := make([]byte, prkPublicKeyOffset+localPublicKeyLen)
 	hash := sha256.New
 

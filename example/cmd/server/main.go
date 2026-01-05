@@ -25,7 +25,7 @@ func main() {
 		var err error
 		priv, pub, err = fwebpush.GenerateVAPIDKeys()
 		if err != nil {
-			panic(err)
+			println("Error generating VAPID key pair:", err)
 		}
 	} else {
 		keypair := strings.Split(*vapid, ":")
@@ -50,6 +50,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		println(string(b))
 		mustCreateFile(".subscription.json", string(b))
 		w.WriteHeader(http.StatusOK)
 	})

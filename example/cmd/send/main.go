@@ -45,7 +45,8 @@ func main() {
 		*subject,
 		keypair[1],
 		keypair[0],
-		fwebpush.WithLocalSecretTTL(12*time.Hour),
+		fwebpush.WithLocalSecretTTL(4*time.Hour),
+		fwebpush.WithRecordSize(1024),
 	)
 
 	if err != nil {
@@ -61,7 +62,7 @@ func main() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		println("Notification sent took", time.Since(start).String())
+		println("Notification sent", resp.StatusCode, "took", time.Since(start).String())
 		file, err := os.Create(".subscription.json")
 		if err != nil {
 			println("Error creating file:", err)
@@ -77,7 +78,7 @@ func main() {
 		}
 		return
 	}
-	println("error status", resp.StatusCode)
+	println("Error status", resp.StatusCode)
 }
 
 func mustReadFile(filename string) string {

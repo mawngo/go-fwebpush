@@ -77,10 +77,17 @@ func WithRecordSize(size int) VAPIDPusherOption {
 
 // WithMaxRecordSize configure the maximum message payload size.
 // If the payload exceeds this size, the push will fail with [ErrMaxSizeExceeded]
-// The maximum accepted value is [MaxRecordSize] (default).
-// The minimum accepted value is 128.
+// The default value is [MaxRecordSize].
+// The minimum accepted value is 103, which includes: Absent header (86 octets), padding (minimum 1 octet),
+// and expansion for AEAD_AES_128_GCM (16 octets)
+//
+// Can be set to 0 to disable max record size validation.
 func WithMaxRecordSize(size int) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {
-		pusher.maxRecordSize = min(max(size, 128), MaxRecordSize)
+		if size <= 0 {
+			pusher.maxRecordSize = 0
+			return
+		}
+		pusher.maxRecordSize = min(max(size, 103), MaxRecordSize)
 	}
 }

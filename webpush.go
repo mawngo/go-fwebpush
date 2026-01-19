@@ -20,6 +20,8 @@ import (
 	"time"
 )
 
+// MaxRecordSize is the maximum size of a push notification record.
+// This value varies from service to service and is usually 4096 bytes.
 const MaxRecordSize = 4096
 
 var ErrMaxSizeExceeded = errors.New("message too large")
@@ -221,8 +223,8 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	dataLen := len(message) + 1
 	cipherTextLen := dataLen + gcmTagLen
 	recordLen := headerLen + cipherTextLen
-	if recordLen > p.maxRecordSize {
-		return nil, ErrMaxSizeExceeded
+	if p.maxRecordSize > 0 && recordLen > p.maxRecordSize {
+		return nil, fmt.Errorf("size %d exceeds %d %w", recordLen, p.maxRecordSize, ErrMaxSizeExceeded)
 	}
 
 	// Calculate padded size.
@@ -340,7 +342,7 @@ func (p *VAPIDPusher) PrepareNotificationRequest(ctx context.Context, message []
 	// From the spec, rs must greater than: plaintext data + padding delimiter + padding + gcmTag,
 	// which equal to computed cipherTextLen.
 	// Most of the lib I found just use 4096 here, as it is the payload limit.
-	binary.BigEndian.PutUint32(rs, MaxRecordSize)
+	binary.BigEndian.PutUint32(rs, uint32(max((cipherTextLen+1)*8, MaxRecordSize)))
 
 	// Encryption Content-Coding Header.
 	record[keyOffset] = byte(len(localPublicKeyBytes))

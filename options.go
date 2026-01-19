@@ -24,6 +24,18 @@ func WithVAPIDTokenTTL(exp time.Duration) VAPIDPusherOption {
 	}
 }
 
+// WithVAPIDTokenTTLExt additional duration added to expiration.
+// The key will expire later than configured expiration this amount of duration,
+// while the validation of the key will expire sooner than configured expiration this amount of duration,
+// thus making the actual expiration time equal to configured expiration.
+//
+// Default 30 minutes.
+func WithVAPIDTokenTTLExt(exp time.Duration) VAPIDPusherOption {
+	return func(pusher *VAPIDPusher) {
+		pusher.vapidTTLBuffer = exp
+	}
+}
+
 // WithRandReader allow switching randReader implementation.
 func WithRandReader(rand io.Reader) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {

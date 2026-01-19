@@ -84,17 +84,12 @@ type VAPIDPusher struct {
 	vapidPublicKeyHeaderPart string        // VAPID public key passed in the VAPID Authorization header (format: `, k=<key`).
 	vapidPrivateKey          []byte        // VAPID private key, used to sign VAPID JWT token.
 	vapidTokenTTL            time.Duration // Optional, expiration for VAPID JWT token.
-	// vapidTTLBuffer additional duration added to expiration.
-	// The key will expire later than configured expiration this amount of duration,
-	// while the validation of the key will expire sooner than configured expiration this amount of duration,
-	// thus making the actual expiration time equal to configured expiration.
-	// It is recommended to set this field to at least 30 minutes.
-	vapidTTLBuffer   time.Duration
-	localSecretTTLFn func() time.Duration // Optional, enable local public key and secret reuse.
-	randReader       io.Reader
-	recordSize       int
-	maxRecordSize    int
-	keyBufPool       sync.Pool
+	vapidTTLBuffer           time.Duration
+	localSecretTTLFn         func() time.Duration // Optional, enable reuse of the local public key and secret.
+	randReader               io.Reader
+	recordSize               int
+	maxRecordSize            int
+	keyBufPool               sync.Pool
 
 	mu    sync.RWMutex
 	cache map[string]reusableKey // Cache of VAPID JWT token by audience.
@@ -109,12 +104,16 @@ func NewVAPIDPusher(
 	c := &VAPIDPusher{
 		vapidTokenTTL:  4 * time.Hour,
 		cache:          make(map[string]reusableKey),
-		vapidTTLBuffer: 1 * time.Hour,
+		vapidTTLBuffer: 30 * time.Minute,
 		randReader:     rand.Reader,
 		maxRecordSize:  MaxRecordSize,
 	}
 	for _, opt := range options {
 		opt(c)
+	}
+
+	if c.vapidTokenTTL+c.vapidTTLBuffer > 24*time.Hour {
+		return nil, errors.New("total VAPID token must be less than 24 hours")
 	}
 
 	if !strings.HasPrefix(subject, "mailto:") && !strings.HasPrefix(subject, "https:") {

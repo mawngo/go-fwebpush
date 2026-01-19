@@ -17,7 +17,6 @@ go get -u github.com/mawngo/go-fwebpush
 The library applies various optimizations to improve performance, including:
 
 - Reducing allocation (pre-allocating buffer, string joining, ...)
-- Avoid header canonicalization (which, in turn, further reducing allocation)
 - Optimized encoding
 - Caching keys and token (see bellow)
 - No padding by default
@@ -30,7 +29,6 @@ The library applies various optimizations to improve performance, including:
   to `Subscription`, user can save those keys for reuse later. When preparing requests, this option improving performance
   by 1.5x if enabled alone, and 15x if enabled along with the `WithVAPIDTokenTTL` above (this huge different is due to
   some design decision that favor simplicity in implementation).
-- `WithRandReader` Allow user to opt in faster rand.Reader.
 
 ## Usage
 

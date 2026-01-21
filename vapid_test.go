@@ -41,7 +41,7 @@ func TestVAPID(t *testing.T) {
 			// Validate the token in the Authorization header
 			tokenString := getTokenFromAuthorizationHeader(keys.vapid, t)
 
-			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 				if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
 					t.Fatal("Wrong validation method need ECDSA!")
 				}

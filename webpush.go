@@ -91,7 +91,6 @@ type VAPIDPusher struct {
 	randReader               io.Reader
 	recordSize               int
 	maxRecordSize            int
-	keyBufPool               sync.Pool
 
 	mu    sync.RWMutex
 	cache map[string]reusableKey // Cache of VAPID JWT token by audience.
@@ -169,6 +168,7 @@ type LocalKey struct {
 	// Public generated public key.
 	Public string `json:"p"`
 	// Secret generated secret.
+	//
 	// Deprecated: switched to IKM caching.
 	Secret string `json:"s,omitempty"`
 	// IKM generated ikm.

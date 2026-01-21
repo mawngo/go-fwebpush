@@ -52,7 +52,7 @@ func runSignerBench(b *testing.B, builder *jwt2.Builder) {
 	}
 
 	var dummy int
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		token, err := builder.Build(claims)
 		if err != nil {
 			b.Fatal(err)
@@ -66,7 +66,7 @@ func runVerifyBench(b *testing.B, builder *jwt2.Builder, verifier jwt2.Verifier)
 	b.Helper()
 	const tokensCount = 32
 	tokens := make([]*jwt2.Token, 0, tokensCount)
-	for i := 0; i < tokensCount; i++ {
+	for range tokensCount {
 		token, err := builder.Build(jwt2.RegisteredClaims{
 			ID:       "id",
 			Issuer:   "sdf",
@@ -80,7 +80,7 @@ func runVerifyBench(b *testing.B, builder *jwt2.Builder, verifier jwt2.Verifier)
 
 	b.ReportAllocs()
 	var dummy int
-	for i := 0; i < b.N/tokensCount; i++ {
+	for range b.N / tokensCount {
 		for _, token := range tokens {
 			err := verifier.Verify(token)
 			if err != nil {

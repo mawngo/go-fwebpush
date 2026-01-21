@@ -26,7 +26,10 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey
 			return reusableKey{}, err
 		}
 		auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud, now)
-		return auth, err
+		if err != nil {
+			return reusableKey{}, err
+		}
+		return auth, nil
 	}
 
 	// We should regenerate the token <additional time> before actually expires.
@@ -52,6 +55,9 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey
 		return reusableKey{}, err
 	}
 	auth.vapid, auth.exp, err = p.doGetVAPIDAuthorizationHeader(aud, now)
+	if err != nil {
+		return reusableKey{}, err
+	}
 	p.cache[aud] = auth
 	return auth, nil
 }

@@ -24,12 +24,10 @@ func WithVAPIDTokenTTL(exp time.Duration) VAPIDPusherOption {
 	}
 }
 
-// WithVAPIDTokenTTLExt additional duration added to expiration.
-// The key will expire later than configured expiration this amount of duration,
-// while the validation of the key will expire sooner than configured expiration this amount of duration,
-// thus making the actual expiration time equal to configured expiration.
+// WithVAPIDTokenTTLExt additional duration added to token expiration,
+// so the token won't expire when it reached the server.
 //
-// Default 30 minutes.
+// Default 15 minutes.
 func WithVAPIDTokenTTLExt(exp time.Duration) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {
 		pusher.vapidTTLBuffer = exp

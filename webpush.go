@@ -105,7 +105,7 @@ func NewVAPIDPusher(
 	c := &VAPIDPusher{
 		vapidTokenTTL:  1 * time.Hour,
 		cache:          make(map[string]reusableKey),
-		vapidTTLBuffer: 10 * time.Minute,
+		vapidTTLBuffer: 15 * time.Minute,
 		randReader:     rand.Reader,
 		maxRecordSize:  MaxRecordSize,
 	}

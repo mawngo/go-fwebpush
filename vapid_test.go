@@ -26,6 +26,7 @@ func TestVAPID(t *testing.T) {
 				vapidPublicKey,
 				vapidPrivateKey,
 				WithVAPIDTokenTTL(12*time.Hour),
+				WithVAPIDTokenTTLExt(1*time.Hour),
 			)
 			if err != nil {
 				t.Fatal(err)

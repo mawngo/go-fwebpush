@@ -32,13 +32,10 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey
 		return auth, nil
 	}
 
-	// We should regenerate the token <additional time> before actually expires.
-	// So the min-acceptable expiration should be <additional time> after now.
-	nowExp := now.Add(p.vapidTTLBuffer)
 	// Most of the time code will run into this path.
 	// Cache hit, not expired, use cached vapid.
 	p.mu.RLock()
-	if auth := p.cache[aud]; nowExp.Before(auth.exp) {
+	if auth := p.cache[aud]; now.Before(auth.exp) {
 		p.mu.RUnlock()
 		return auth, nil
 	}
@@ -47,7 +44,7 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// Someone else has written to the cache.
-	if auth := p.cache[aud]; nowExp.Before(auth.exp) {
+	if auth := p.cache[aud]; now.Before(auth.exp) {
 		return auth, nil
 	}
 	auth, err := p.doGenLocalKey()
@@ -63,17 +60,17 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey
 }
 
 func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string, now time.Time) (string, time.Time, error) {
-	// Always expire at least <additional time> (so the message won't expire when it reached the server).
-	exp := now.Add(p.vapidTokenTTL + p.vapidTTLBuffer)
+	exp := now.Add(p.vapidTokenTTL)
 	privKey := generateVAPIDHeaderKeys(p.vapidPrivateKey)
 	signer, err := jwt2.NewSignerES(jwt2.ES256, privKey)
 	if err != nil {
 		return "", exp, err
 	}
 	claims := &jwt2.RegisteredClaims{
-		Audience:  aud,
-		Subject:   p.subject,
-		ExpiresAt: exp.Unix(),
+		Audience: aud,
+		Subject:  p.subject,
+		// Always expire at least <additional time> (so the message won't expire when it reached the server).
+		ExpiresAt: exp.Add(p.vapidTTLBuffer).Unix(),
 	}
 	token, err := jwt2.NewBuilder(signer).Build(claims)
 	if err != nil {

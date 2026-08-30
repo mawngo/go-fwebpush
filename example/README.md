@@ -4,7 +4,7 @@ All commands below should be run from this directory (example).
 
 ## Start the server
 
-You can supply VAPID keypair using `-vapid=<priv>:<pub>`, or specify in `.vapid` file in current working
+You can supply VAPID keypair using `-vapid=<priv>:<pub>`, or specify in `.vapid` file in the current working
 directory.
 
 ```bash

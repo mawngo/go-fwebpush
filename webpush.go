@@ -167,10 +167,6 @@ type Subscription struct {
 type LocalKey struct {
 	// Public generated public key.
 	Public string `json:"p"`
-	// Secret generated secret.
-	//
-	// Deprecated: switched to IKM caching.
-	Secret string `json:"s,omitempty"`
 	// IKM generated ikm.
 	IKM string `json:"m,omitempty"`
 	// At creation timestamp, used for checking expiration.

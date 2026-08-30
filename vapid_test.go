@@ -1,9 +1,11 @@
 package fwebpush
 
 import (
+	"crypto/ecdsa"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"github.com/golang-jwt/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
 	"strings"
 	"testing"
 	"time"
@@ -40,52 +42,63 @@ func TestVAPID(t *testing.T) {
 			vapid := keys.vapid
 
 			// Validate the token in the Authorization header
-			tokenString := getTokenFromAuthorizationHeader(keys.vapid, t)
-
-			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
-					t.Fatal("Wrong validation method need ECDSA!")
-				}
-
-				// To decode the token it needs the VAPID public key
+			publicKey, err := func() (*ecdsa.PublicKey, error) {
+				// To decode the token, it needs the VAPID public key
 				b64 := base64.RawURLEncoding
 				decodedVapidPrivateKey, err := b64.DecodeString(vapidPrivateKey)
 				if err != nil {
-					t.Fatal("Could not decode VAPID private key")
+					return nil, fmt.Errorf("could not decode VAPID private key: %w", err)
 				}
-
 				privKey := generateVAPIDHeaderKeys(decodedVapidPrivateKey)
-				return privKey.Public(), nil
-			})
+				return privKey.Public().(*ecdsa.PublicKey), nil
+			}()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Validate the token in the Authorization header
+			tokenString := getTokenFromAuthorizationHeader(keys.vapid, t)
+			verifier, err := jwt2.NewVerifierES(jwt2.ES256, publicKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			token, err := jwt2.Parse([]byte(tokenString), verifier)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok := token.Header().Algorithm == jwt2.ES256; !ok {
+				t.Fatal("Wrong validation method need ECDSA!")
+			}
 
 			// Check the claims on the token.
-			if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+			var claims jwt2.RegisteredClaims
+			if err := json.Unmarshal(token.Claims(), &claims); err == nil {
 				expectedSub := fmt.Sprintf("mailto:%s", sub)
-				if expectedSub != claims["sub"] {
+				if expectedSub != claims.Subject {
 					t.Fatalf(
 						"Incorreect mailto, expected=%s, got=%s",
 						expectedSub,
-						claims["sub"],
+						claims.Subject,
 					)
 				}
 
-				if int64(claims["exp"].(float64)) < now.Add(13*time.Hour).Unix() {
+				if claims.ExpiresAt < now.Add(13*time.Hour).Unix() {
 					t.Fatalf(
-						"Incorreect exp, expected>%d, got=%s",
+						"Incorreect exp, expected>%d, got=%d",
 						now.Add(13*time.Hour).Unix(),
-						claims["exp"],
+						claims.ExpiresAt,
 					)
 				}
 
-				if int64(claims["exp"].(float64)) > now.Add(14*time.Hour).Unix() {
+				if claims.ExpiresAt > now.Add(14*time.Hour).Unix() {
 					t.Fatalf(
-						"Incorreect exp, expected<%d, got=%s",
+						"Incorreect exp, expected<%d, got=%d",
 						now.Add(14*time.Hour).Unix(),
-						claims["exp"],
+						claims.ExpiresAt,
 					)
 				}
 
-				if claims["aud"] == "" {
+				if claims.Audience == "" {
 					t.Fatal("Audience should not be empty")
 				}
 			} else {

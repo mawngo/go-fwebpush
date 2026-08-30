@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
 	"golang.org/x/crypto/hkdf"
 	"io"
 	"net/http"
@@ -457,22 +457,25 @@ func getVAPIDAuthorizationHeader(
 		return "", err
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-		"aud": fmt.Sprintf("%s://%s", subURL.Scheme, subURL.Host),
-		"exp": expiration.Unix(),
-		"sub": fmt.Sprintf("mailto:%s", subscriber),
-	})
-
 	// Decode the VAPID private key
 	decodedVapidPrivateKey, err := base64.RawURLEncoding.DecodeString(vapidPrivateKey)
 	if err != nil {
 		return "", err
 	}
-
 	privKey := generateVAPIDHeaderKeys(decodedVapidPrivateKey)
 
 	// Sign token with private key
-	jwtString, err := token.SignedString(privKey)
+	signer, err := jwt2.NewSignerES(jwt2.ES256, privKey)
+	if err != nil {
+		return "", err
+	}
+	claims := &jwt2.RegisteredClaims{
+		Audience: fmt.Sprintf("%s://%s", subURL.Scheme, subURL.Host),
+		Subject:  fmt.Sprintf("mailto:%s", subscriber),
+		// Always expire at least <additional time> (so the message won't expire when it reached the server).
+		ExpiresAt: expiration.Unix(),
+	}
+	token, err := jwt2.NewBuilder(signer).Build(claims)
 	if err != nil {
 		return "", err
 	}
@@ -485,7 +488,7 @@ func getVAPIDAuthorizationHeader(
 
 	return fmt.Sprintf(
 		"vapid t=%s, k=%s",
-		jwtString,
+		token.String(),
 		base64.RawURLEncoding.EncodeToString(pubKey),
 	), nil
 }

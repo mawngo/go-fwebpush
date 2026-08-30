@@ -3,7 +3,6 @@ package jwt_test
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
 	"fmt"
 	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
 	"io"
@@ -18,7 +17,7 @@ func BenchmarkAlgES(b *testing.B) {
 		jwt2.ES512: elliptic.P521(),
 	}
 	for algo, curve := range esAlgos {
-		key, errKey := ecdsa.GenerateKey(curve, rand.Reader)
+		key, errKey := ecdsa.GenerateKey(curve, nil)
 		if errKey != nil {
 			b.Fatal(errKey)
 		}

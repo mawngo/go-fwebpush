@@ -34,7 +34,7 @@ func WithVAPIDTokenTTLExt(exp time.Duration) VAPIDPusherOption {
 	}
 }
 
-// WithRandReader allow switching randReader implementation.
+// WithRandReader allow switching randReader implementation used for salt generation.
 func WithRandReader(rand io.Reader) VAPIDPusherOption {
 	return func(pusher *VAPIDPusher) {
 		pusher.randReader = rand

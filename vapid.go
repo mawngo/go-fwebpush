@@ -4,7 +4,6 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -84,7 +83,7 @@ func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string, now time.Time) (
 func (p *VAPIDPusher) doGenLocalKey() (reusableKey, error) {
 	curve := ecdh.P256()
 	// Application server key pairs (single use).
-	localPrivateKey, err := curve.GenerateKey(rand.Reader)
+	localPrivateKey, err := curve.GenerateKey(nil)
 	if err != nil {
 		return reusableKey{}, errors.Join(ErrEncryption, err)
 	}
@@ -101,7 +100,7 @@ func GenerateVAPIDKeys() (privateKey, publicKey string, err error) {
 	// Get the private key from the P256 curve
 	curve := ecdh.P256()
 
-	private, err := curve.GenerateKey(rand.Reader)
+	private, err := curve.GenerateKey(nil)
 	if err != nil {
 		return
 	}

@@ -3,7 +3,6 @@ package jwt
 import (
 	"crypto"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"math/big"
 )
 
@@ -86,7 +85,7 @@ func (es *ESAlg) Sign(payload []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	r, s, err := ecdsa.Sign(rand.Reader, es.privateKey, digest)
+	r, s, err := ecdsa.Sign(nil, es.privateKey, digest)
 	if err != nil {
 		return nil, err
 	}

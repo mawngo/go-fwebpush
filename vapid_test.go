@@ -49,7 +49,10 @@ func TestVAPID(t *testing.T) {
 				if err != nil {
 					return nil, fmt.Errorf("could not decode VAPID private key: %w", err)
 				}
-				privKey := generateVAPIDHeaderKeys(decodedVapidPrivateKey)
+				privKey, err := generateVAPIDHeaderKeys(decodedVapidPrivateKey)
+				if err != nil {
+					return nil, err
+				}
 				return privKey.Public().(*ecdsa.PublicKey), nil
 			}()
 			if err != nil {

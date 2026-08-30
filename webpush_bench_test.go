@@ -462,8 +462,10 @@ func getVAPIDAuthorizationHeader(
 	if err != nil {
 		return "", err
 	}
-	privKey := generateVAPIDHeaderKeys(decodedVapidPrivateKey)
-
+	privKey, err := generateVAPIDHeaderKeys(decodedVapidPrivateKey)
+	if err != nil {
+		return "", err
+	}
 	// Sign token with private key
 	signer, err := jwt2.NewSignerES(jwt2.ES256, privKey)
 	if err != nil {

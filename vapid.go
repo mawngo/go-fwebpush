@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/mawngo/go-fwebpush/fastunsafeurl"
 	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
-	"math/big"
 	"time"
 )
 
@@ -61,7 +60,10 @@ func (p *VAPIDPusher) getCachedKeys(endpoint string, now time.Time) (reusableKey
 
 func (p *VAPIDPusher) doGetVAPIDAuthorizationHeader(aud string, now time.Time) (string, time.Time, error) {
 	exp := now.Add(p.vapidTokenTTL)
-	privKey := generateVAPIDHeaderKeys(p.vapidPrivateKey)
+	privKey, err := generateVAPIDHeaderKeys(p.vapidPrivateKey)
+	if err != nil {
+		return "", exp, err
+	}
 	signer, err := jwt2.NewSignerES(jwt2.ES256, privKey)
 	if err != nil {
 		return "", exp, err
@@ -112,29 +114,9 @@ func GenerateVAPIDKeys() (privateKey, publicKey string, err error) {
 }
 
 // Generates the ECDSA public and private keys for the JWT encryption.
-func generateVAPIDHeaderKeys(privateKey []byte) *ecdsa.PrivateKey {
-	// Public key
+func generateVAPIDHeaderKeys(privateKey []byte) (*ecdsa.PrivateKey, error) {
 	curve := elliptic.P256()
-	px, py := curve.ScalarMult(
-		curve.Params().Gx,
-		curve.Params().Gy,
-		privateKey,
-	)
-
-	pubKey := ecdsa.PublicKey{
-		Curve: curve,
-		X:     px,
-		Y:     py,
-	}
-
-	// Private key
-	d := &big.Int{}
-	d.SetBytes(privateKey)
-
-	return &ecdsa.PrivateKey{
-		PublicKey: pubKey,
-		D:         d,
-	}
+	return ecdsa.ParseRawPrivateKey(curve, privateKey)
 }
 
 // reusableKey is used to cache the VAPID reusable keys and token.

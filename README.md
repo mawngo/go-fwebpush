@@ -6,7 +6,7 @@ Inspired by https://github.com/SherClockHolmes/webpush-go
 
 ## Installation
 
-Require go 1.25+
+Require go 1.27+
 
 ```shell
 go get -u github.com/mawngo/go-fwebpush

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"github.com/mawngo/go-fwebpush"
+	"github.com/mawngo/go-fwebpush/v2"
 	"os"
 	"strings"
 	"time"

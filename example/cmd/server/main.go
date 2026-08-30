@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
-	"github.com/mawngo/go-fwebpush"
+	"github.com/mawngo/go-fwebpush/v2"
 	"html/template"
 	"io"
 	"net/http"

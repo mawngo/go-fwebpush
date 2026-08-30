@@ -1,4 +1,4 @@
-module github.com/mawngo/go-fwebpush
+module github.com/mawngo/go-fwebpush/v2
 
 go 1.27
 

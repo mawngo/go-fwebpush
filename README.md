@@ -9,7 +9,7 @@ Inspired by https://github.com/SherClockHolmes/webpush-go
 Require go 1.27+
 
 ```shell
-go get -u github.com/mawngo/go-fwebpush
+go get -u github.com/mawngo/go-fwebpush/v2
 ```
 
 ## Optimization
@@ -40,7 +40,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/mawngo/go-fwebpush"
+	"github.com/mawngo/go-fwebpush/v2"
 )
 
 func main() {

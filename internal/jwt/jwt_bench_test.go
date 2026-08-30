@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"fmt"
-	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/v2/internal/jwt"
 	"io"
 	"testing"
 	"time"

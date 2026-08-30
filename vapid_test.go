@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/v2/internal/jwt"
 	"strings"
 	"testing"
 	"time"

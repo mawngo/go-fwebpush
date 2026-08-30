@@ -7,8 +7,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/mawngo/go-fwebpush/fastunsafeurl"
-	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
+	"github.com/mawngo/go-fwebpush/v2/fastunsafeurl"
+	jwt2 "github.com/mawngo/go-fwebpush/v2/internal/jwt"
 	"time"
 )
 

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/mawngo/go-fwebpush"
+	"github.com/mawngo/go-fwebpush/v2"
 	"os"
 )
 

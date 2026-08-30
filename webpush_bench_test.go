@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	jwt2 "github.com/mawngo/go-fwebpush/internal/jwt"
+	jwt2 "github.com/mawngo/go-fwebpush/v2/internal/jwt"
 	"golang.org/x/crypto/hkdf"
 	"io"
 	"net/http"
